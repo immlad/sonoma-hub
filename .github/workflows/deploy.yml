@@ -13,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
@@ -42,20 +42,28 @@ jobs:
         env:
           NODE_ENV: production
 
-      - name: Prepare Pages artifact
+      - name: Find build output
+        id: prepare
+        shell: bash
         run: |
+          echo "Looking for build output..."
+
           if [ -d ".output/public" ]; then
-            echo "Using .output/public"
-            echo "OUTPUT_DIR=.output/public" >> "$GITHUB_ENV"
+            echo "Found .output/public"
+            echo "output_dir=.output/public" >> "$GITHUB_OUTPUT"
+
           elif [ -d "dist/client" ]; then
-            echo "Using dist/client"
-            echo "OUTPUT_DIR=dist/client" >> "$GITHUB_ENV"
+            echo "Found dist/client"
+            echo "output_dir=dist/client" >> "$GITHUB_OUTPUT"
+
           elif [ -d "dist" ]; then
-            echo "Using dist"
-            echo "OUTPUT_DIR=dist" >> "$GITHUB_ENV"
+            echo "Found dist"
+            echo "output_dir=dist" >> "$GITHUB_OUTPUT"
+
           else
             echo "ERROR: Could not find a static build directory."
-            echo "Build output:"
+            echo ""
+            echo "Directories found:"
             find . -maxdepth 3 -type d \
               -not -path "./node_modules/*" \
               -not -path "./.git/*" | sort
@@ -65,7 +73,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
-          path: ${{ env.OUTPUT_DIR }}
+          path: ${{ steps.prepare.outputs.output_dir }}
 
   deploy:
     name: Deploy to GitHub Pages
