@@ -1,0 +1,2 @@
+- [x] Sonoma desktop, login/signup, apps, proxies, admin panel
+- [x] Proxy windows allow new tabs/popups (no iframe sandbox)
