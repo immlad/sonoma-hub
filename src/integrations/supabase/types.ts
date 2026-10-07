@@ -14,13 +14,45 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      hub_apps: {
+        Row: {
+          color: string
+          created_at: string
+          html: string | null
+          icon: string
+          id: string
+          kind: string
+          name: string
+          urls: string[]
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          html?: string | null
+          icon?: string
+          id?: string
+          kind?: string
+          name: string
+          urls?: string[]
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          html?: string | null
+          icon?: string
+          id?: string
+          kind?: string
+          name?: string
+          urls?: string[]
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      is_hub_admin: { Args: never; Returns: boolean }
     }
     Enums: {
       [_ in never]: never
