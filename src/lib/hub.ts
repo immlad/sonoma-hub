@@ -15,7 +15,7 @@ export const ADMIN_NAME = "minh";
 
 export function isAdmin(user: User | null | undefined) {
   if (!user) return false;
-  const name = String(user.user_metadata?.name ?? "").trim().toLowerCase();
+  const name = String(user.user_metadata?.['name'] ?? "").trim().toLowerCase();
   return user.email?.toLowerCase() === ADMIN_EMAIL && name === ADMIN_NAME;
 }
 

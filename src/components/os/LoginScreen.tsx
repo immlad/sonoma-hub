@@ -50,7 +50,7 @@ export function LoginScreen() {
       </div>
       <form onSubmit={submit} className="relative mt-auto mb-[12vh] flex flex-col items-center gap-3 animate-fade-up">
         <div className="mb-2 flex h-20 w-20 items-center justify-center rounded-full glass border border-border text-4xl">
-          {name ? name[0].toUpperCase() : "👤"}
+          {name ? name.charAt(0).toUpperCase() : "👤"}
         </div>
         {mode === "up" && (
           <input className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />

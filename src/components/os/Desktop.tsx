@@ -99,7 +99,7 @@ export function Desktop({ user }: { user: User }) {
   const [launchpad, setLaunchpad] = useState(false);
   const [now, setNow] = useState(new Date());
   const admin = isAdmin(user);
-  const name = String(user.user_metadata?.name ?? user.email ?? "User");
+  const name = String(user.user_metadata?.['name'] ?? user.email ?? "User");
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 10000);
