@@ -1,24 +1,32 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import type { User } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
+import { Desktop } from "@/components/os/Desktop";
+import { LoginScreen } from "@/components/os/LoginScreen";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  ssr: false,
+  head: () => ({
+    meta: [
+      { title: "Sonoma Hub — Proxies, Games & Apps" },
+      { name: "description", content: "A macOS Sonoma–style desktop hub for proxies, games, a browser and chat." },
+      { property: "og:title", content: "Sonoma Hub — Proxies, Games & Apps" },
+      { property: "og:description", content: "A macOS Sonoma–style desktop hub for proxies, games, a browser and chat." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  const [user, setUser] = useState<User | null | undefined>(undefined);
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null));
+    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
+    return () => data.subscription.unsubscribe();
+  }, []);
+  if (user === undefined) return <div className="fixed inset-0 bg-background" />;
+  return user ? <Desktop user={user} /> : <LoginScreen />;
 }
