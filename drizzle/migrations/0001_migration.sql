@@ -1,0 +1,2 @@
+UPDATE public.hub_apps SET icon = '/icons/' || lower(name) || '.png' WHERE lower(name) IN ('nebulo','nova','orbit','comet','pulsar','quasar','2048','slope');
+ALTER TABLE public.hub_apps ALTER COLUMN icon SET DEFAULT '/icons/globe.png';
