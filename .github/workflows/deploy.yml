@@ -1,0 +1,82 @@
+name: Deploy Sonoma Hub to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build Sonoma Hub
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Build application
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Prepare Pages artifact
+        run: |
+          if [ -d ".output/public" ]; then
+            echo "Using .output/public"
+            echo "OUTPUT_DIR=.output/public" >> "$GITHUB_ENV"
+          elif [ -d "dist/client" ]; then
+            echo "Using dist/client"
+            echo "OUTPUT_DIR=dist/client" >> "$GITHUB_ENV"
+          elif [ -d "dist" ]; then
+            echo "Using dist"
+            echo "OUTPUT_DIR=dist" >> "$GITHUB_ENV"
+          else
+            echo "ERROR: Could not find a static build directory."
+            echo "Build output:"
+            find . -maxdepth 3 -type d \
+              -not -path "./node_modules/*" \
+              -not -path "./.git/*" | sort
+            exit 1
+          fi
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ env.OUTPUT_DIR }}
+
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
