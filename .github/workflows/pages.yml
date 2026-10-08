@@ -1,3 +1,4 @@
+
 name: Deploy Sonoma Hub to GitHub Pages
 
 on:
@@ -13,7 +14,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: github-pages
   cancel-in-progress: false
 
 jobs:
@@ -37,30 +38,73 @@ jobs:
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Build application
+      - name: Build static site
         run: npm run build
         env:
           NODE_ENV: production
+          GITHUB_PAGES: "1"
 
       - name: Prepare Pages artifact
+        shell: bash
         run: |
-          if [ -d ".output/public" ]; then
-            echo "Using .output/public"
-            echo "OUTPUT_DIR=.output/public" >> "$GITHUB_ENV"
-          elif [ -d "dist/client" ]; then
-            echo "Using dist/client"
-            echo "OUTPUT_DIR=dist/client" >> "$GITHUB_ENV"
-          elif [ -d "dist" ]; then
-            echo "Using dist"
-            echo "OUTPUT_DIR=dist" >> "$GITHUB_ENV"
-          else
-            echo "ERROR: Could not find a static build directory."
-            echo "Build output:"
-            find . -maxdepth 3 -type d \
+          set -euo pipefail
+
+          echo "Looking for generated HTML files..."
+          find . \
+            -type f \
+            -name "index.html" \
+            -not -path "./node_modules/*" \
+            -not -path "./.git/*" \
+            -print | sort
+
+          OUTPUT_DIR=""
+
+          for DIR in ".output/public" "dist/client" "dist"; do
+            if [ -f "$DIR/index.html" ]; then
+              OUTPUT_DIR="$DIR"
+              break
+            fi
+          done
+
+          if [ -z "$OUTPUT_DIR" ]; then
+            echo "::error::Could not find index.html in a supported output directory."
+
+            echo "Generated HTML files:"
+            find . \
+              -type f \
+              -name "*.html" \
               -not -path "./node_modules/*" \
-              -not -path "./.git/*" | sort
+              -not -path "./.git/*" \
+              -print | sort
+
+            echo "Generated directories:"
+            find . \
+              -maxdepth 4 \
+              -type d \
+              -not -path "./node_modules/*" \
+              -not -path "./.git/*" \
+              -print | sort
+
             exit 1
           fi
+
+          echo "Using output directory: $OUTPUT_DIR"
+
+          if [ ! -s "$OUTPUT_DIR/index.html" ]; then
+            echo "::error::index.html is missing or empty."
+            exit 1
+          fi
+
+          if [ ! -f "$OUTPUT_DIR/404.html" ]; then
+            cp "$OUTPUT_DIR/index.html" "$OUTPUT_DIR/404.html"
+          fi
+
+          touch "$OUTPUT_DIR/.nojekyll"
+
+          echo "Selected output files:"
+          ls -la "$OUTPUT_DIR" | head -100
+
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
@@ -68,7 +112,7 @@ jobs:
           path: ${{ env.OUTPUT_DIR }}
 
   deploy:
-    name: Deploy to GitHub Pages
+    name: Deploy Sonoma Hub
     runs-on: ubuntu-latest
     needs: build
 
@@ -77,6 +121,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Deploy
+      - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
