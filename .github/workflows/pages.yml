@@ -1,4 +1,4 @@
-name: Deploy to GitHub Pages
+name: Deploy Sonoma Hub to GitHub Pages
 
 on:
   push:
@@ -13,8 +13,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: github-pages
-  cancel-in-progress: true
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -23,10 +23,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -37,64 +37,30 @@ jobs:
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Build Sonoma Hub
+      - name: Build application
         run: npm run build
         env:
           NODE_ENV: production
-          GITHUB_PAGES: "1"
 
-      - name: Check build output
-        run: |
-          echo "=== Build directories ==="
-          find . -maxdepth 3 -type d \
-            -not -path "./node_modules/*" \
-            -not -path "./.git/*" \
-            | sort
-
-          echo ""
-          echo "=== HTML files ==="
-          find . \
-            -not -path "./node_modules/*" \
-            -not -path "./.git/*" \
-            -name "*.html" \
-            -print
-
-      - name: Prepare GitHub Pages files
-        shell: bash
+      - name: Prepare Pages artifact
         run: |
           if [ -d ".output/public" ]; then
-            echo "Using TanStack Start output: .output/public"
-            OUTPUT_DIR=".output/public"
-
+            echo "Using .output/public"
+            echo "OUTPUT_DIR=.output/public" >> "$GITHUB_ENV"
           elif [ -d "dist/client" ]; then
-            echo "Using client output: dist/client"
-            OUTPUT_DIR="dist/client"
-
+            echo "Using dist/client"
+            echo "OUTPUT_DIR=dist/client" >> "$GITHUB_ENV"
           elif [ -d "dist" ]; then
-            echo "Using Vite output: dist"
-            OUTPUT_DIR="dist"
-
+            echo "Using dist"
+            echo "OUTPUT_DIR=dist" >> "$GITHUB_ENV"
           else
-            echo "ERROR: No static build directory found."
+            echo "ERROR: Could not find a static build directory."
+            echo "Build output:"
+            find . -maxdepth 3 -type d \
+              -not -path "./node_modules/*" \
+              -not -path "./.git/*" | sort
             exit 1
           fi
-
-          echo "Output directory: $OUTPUT_DIR"
-
-          if [ ! -f "$OUTPUT_DIR/index.html" ]; then
-            echo "ERROR: $OUTPUT_DIR/index.html does not exist."
-            find "$OUTPUT_DIR" -maxdepth 3 -type f | sort
-            exit 1
-          fi
-
-          cp "$OUTPUT_DIR/index.html" "$OUTPUT_DIR/404.html"
-
-          touch "$OUTPUT_DIR/.nojekyll"
-
-          echo "Pages files prepared:"
-          find "$OUTPUT_DIR" -maxdepth 2 -type f | sort | head -100
-
-          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
@@ -102,7 +68,7 @@ jobs:
           path: ${{ env.OUTPUT_DIR }}
 
   deploy:
-    name: Deploy Sonoma Hub
+    name: Deploy to GitHub Pages
     runs-on: ubuntu-latest
     needs: build
 
@@ -111,6 +77,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
