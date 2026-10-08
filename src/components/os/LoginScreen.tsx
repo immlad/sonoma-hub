@@ -15,20 +15,25 @@ export function LoginScreen() {
     return () => clearInterval(t);
   }, []);
 
+  // Accounts without an email use a synthetic address derived from the username.
+  const toEmail = (v: string) =>
+    v.includes("@") ? v.trim() : `${v.trim().toLowerCase().replace(/[^a-z0-9._-]/g, "")}@hub.local`;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setMsg(null);
     if (mode === "up") {
+      const addr = email.trim() ? email.trim() : toEmail(name);
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: addr,
         password,
         options: { data: { name: name.trim() }, emailRedirectTo: window.location.origin },
       });
       if (error) setMsg(error.message);
       else if (!data.session) setMsg("Check your email to confirm your account.");
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { error } = await supabase.auth.signInWithPassword({ email: toEmail(email), password });
       if (error) setMsg(error.message);
     }
     setBusy(false);
@@ -55,7 +60,14 @@ export function LoginScreen() {
         {mode === "up" && (
           <input className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
         )}
-        <input className={field} type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input
+          className={field}
+          type={mode === "up" ? "email" : "text"}
+          placeholder={mode === "up" ? "Email (optional)" : "Username or email"}
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required={mode === "in"}
+        />
         <input className={field} type="password" placeholder="Password" minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} required />
         <button disabled={busy} className="w-64 rounded-full bg-primary py-2 text-sm font-medium text-primary-foreground transition hover:brightness-110 disabled:opacity-50">
           {busy ? "…" : mode === "in" ? "Log In" : "Create Account"}

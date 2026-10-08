@@ -1,2 +1,4 @@
 - [x] Sonoma desktop, login/signup, apps, proxies, admin panel
 - [x] Proxy windows allow new tabs/popups (no iframe sandbox)
+- [x] Optional email at signup (username login)
+- [x] GitHub Pages workflow
