@@ -747,7 +747,7 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
         </button>
 
         {msg && (
-          <p role="status" className="break-words text-xs text-white/65">
+          <p role="status" className="wrap-break-word text-xs text-white/65">
             {msg}
           </p>
         )}

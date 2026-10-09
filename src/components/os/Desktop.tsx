@@ -1,5 +1,11 @@
-
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import type { User } from "@supabase/supabase-js";
 import {
   BatteryCharging,
@@ -48,6 +54,14 @@ type Win = {
   closing: boolean;
 };
 
+type AppContextMenuState = {
+  key: string;
+  x: number;
+  y: number;
+} | null;
+
+const PREFERENCES_KEY = "sonoma-hub-desktop-preferences-v2";
+const PINS_KEY = "sonoma-hub-pinned-apps-v1";
 let zTop = 10;
 
 const wallpaperStyles: Record<string, string> = {
@@ -73,12 +87,11 @@ function glassStyle(blur: number, opacity = 0.42): CSSProperties {
 
 function WindowsLogo({ size = 23 }: { size?: number }) {
   const side = (size - 3) / 2;
-
   return (
     <span
-      className="grid shrink-0 grid-cols-2 gap-[3px]"
+      className="grid shrink-0 grid-cols-2 gap-0.75"
       style={{ width: size, height: size }}
-      aria-label="Start"
+      aria-hidden="true"
     >
       {Array.from({ length: 4 }, (_, i) => (
         <span
@@ -95,18 +108,8 @@ function WindowsLogo({ size = 23 }: { size?: number }) {
   );
 }
 
-function AppGlyph({
-  app,
-  size = 24,
-}: {
-  app: Launchable;
-  size?: number;
-}) {
-  const common = {
-    size,
-    strokeWidth: 1.9,
-  };
-
+function AppGlyph({ app, size = 24 }: { app: Launchable; size?: number }) {
+  const common = { size, strokeWidth: 1.9 };
   switch (app.key) {
     case "launchpad":
       return <LayoutGrid {...common} color="#93c5fd" />;
@@ -154,7 +157,6 @@ function Window({
   blur: number;
 }) {
   const drag = useRef<{ dx: number; dy: number } | null>(null);
-
   const style: CSSProperties = win.max
     ? {
         left: 0,
@@ -191,12 +193,10 @@ function Window({
         onPointerDown={(e) => {
           if ((e.target as HTMLElement).closest("button")) return;
           if (win.max) return;
-
           drag.current = {
             dx: e.clientX - win.x,
             dy: e.clientY - win.y,
           };
-
           e.currentTarget.setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
@@ -234,17 +234,12 @@ function Window({
             </button>
           ))}
         </div>
-
         <div className="min-w-0 flex-1 truncate px-2 text-center text-xs font-medium text-white/85">
           {app.name}
         </div>
-
         <div className="w-12 shrink-0" />
       </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {app.render()}
-      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">{app.render()}</div>
     </div>
   );
 }
@@ -253,6 +248,7 @@ function WindowsTaskbar({
   items,
   running,
   onOpen,
+  onContextMenu,
   preferences,
   now,
   search,
@@ -262,6 +258,10 @@ function WindowsTaskbar({
   items: Launchable[];
   running: Set<string>;
   onOpen: (key: string) => void;
+  onContextMenu: (
+    event: ReactMouseEvent<HTMLElement>,
+    app: Launchable,
+  ) => void;
   preferences: DesktopPreferences;
   now: Date;
   search: string;
@@ -271,14 +271,11 @@ function WindowsTaskbar({
   const vertical = preferences.dockPosition !== "bottom";
   const side = preferences.dockPosition;
   const width = Math.min(100, Math.max(35, preferences.dockWidth));
-
   const iconSize = Math.round(
     28 + ((preferences.dockSize - 40) / 28) * 8,
   );
-
   const barHeight = Math.max(50, preferences.dockSize + 8);
   const [trayOpen, setTrayOpen] = useState(false);
-
   const outerStyle: CSSProperties =
     side === "bottom"
       ? {
@@ -297,7 +294,6 @@ function WindowsTaskbar({
           ...(side === "left" ? { left: 8 } : { right: 8 }),
           borderRadius: 22,
         };
-
   const buttonStyle: CSSProperties = {
     border: 0,
     background: "transparent",
@@ -323,7 +319,6 @@ function WindowsTaskbar({
           vertical ? "w-full flex-col justify-center gap-2" : "gap-1"
         }`}
       >
-        {/* Windows Start button */}
         <button
           type="button"
           title="Start"
@@ -339,7 +334,6 @@ function WindowsTaskbar({
           <WindowsLogo size={iconSize * 0.78} />
         </button>
 
-        {/* Windows-like search pill */}
         {vertical ? (
           <button
             type="button"
@@ -370,10 +364,7 @@ function WindowsTaskbar({
               minWidth: 100,
             }}
           >
-            <Search
-              size={17}
-              className="shrink-0 text-white/75"
-            />
+            <Search size={17} className="shrink-0 text-white/75" />
             <input
               value={search}
               onFocus={onSearchOpen}
@@ -387,7 +378,6 @@ function WindowsTaskbar({
           </form>
         )}
 
-        {/* Pinned applications */}
         {items.map((app) => (
           <button
             key={app.key}
@@ -395,6 +385,7 @@ function WindowsTaskbar({
             title={app.name}
             aria-label={`Open ${app.name}`}
             onClick={() => onOpen(app.key)}
+            onContextMenu={(event) => onContextMenu(event, app)}
             className="group relative flex shrink-0 items-center justify-center rounded-xl transition duration-150 hover:bg-white/10 active:scale-95"
             style={{
               ...buttonStyle,
@@ -403,18 +394,12 @@ function WindowsTaskbar({
             }}
           >
             <AppGlyph app={app} size={iconSize * 0.72} />
-
             {running.has(app.key) && (
               <span
                 className="absolute bottom-0 rounded-full"
-                style={{
-                  width: 12,
-                  height: 3,
-                  background: "#93c5fd",
-                }}
+                style={{ width: 12, height: 3, background: "#93c5fd" }}
               />
             )}
-
             <span
               className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
               style={glassStyle(preferences.glassBlur, 0.88)}
@@ -424,7 +409,6 @@ function WindowsTaskbar({
           </button>
         ))}
 
-        {/* System tray and clock */}
         {!vertical && (
           <div
             className="ml-auto flex h-full shrink-0 items-center gap-2 pl-3"
@@ -440,29 +424,13 @@ function WindowsTaskbar({
             >
               <ChevronUp size={15} />
             </button>
-
-            <button
-              type="button"
-              title="Network"
-              aria-label="Network"
-              className="hidden rounded-md p-1 hover:bg-white/10 sm:flex"
-              style={buttonStyle}
-            >
+            <span className="hidden rounded-md p-1 sm:flex" title="Network">
               <Wifi size={17} />
-            </button>
-
-            <button
-              type="button"
-              title="Volume"
-              aria-label="Volume"
-              className="hidden rounded-md p-1 hover:bg-white/10 sm:flex"
-              style={buttonStyle}
-            >
+            </span>
+            <span className="hidden rounded-md p-1 sm:flex" title="Volume">
               <Volume2 size={17} />
-            </button>
-
+            </span>
             <BatteryCharging size={18} />
-
             <div className="ml-1 flex flex-col items-end justify-center whitespace-nowrap text-[11px] leading-[1.35]">
               <span>
                 {now.toLocaleTimeString([], {
@@ -478,7 +446,6 @@ function WindowsTaskbar({
                 })}
               </span>
             </div>
-
             {trayOpen && (
               <div
                 className="absolute bottom-full right-3 mb-3 rounded-2xl p-4 shadow-xl"
@@ -487,9 +454,7 @@ function WindowsTaskbar({
                   width: 220,
                 }}
               >
-                <div className="mb-3 text-sm font-semibold">
-                  Quick settings
-                </div>
+                <div className="mb-3 text-sm font-semibold">Quick settings</div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div className="flex items-center gap-2 rounded-xl bg-white/10 p-3">
                     <Wifi size={16} /> Wi-Fi
@@ -505,7 +470,6 @@ function WindowsTaskbar({
             )}
           </div>
         )}
-
         {vertical && (
           <div className="mt-auto flex flex-col items-center gap-3 pt-3">
             <Wifi size={16} />
@@ -537,42 +501,32 @@ export function Desktop({ user }: { user: User }) {
     DEFAULT_DESKTOP_PREFERENCES,
   );
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
-
+  const [pinnedAppIds, setPinnedAppIds] = useState<string[]>([]);
+  const [pinsLoaded, setPinsLoaded] = useState(false);
+  const [contextMenu, setContextMenu] = useState<AppContextMenuState>(null);
+  const [deletingApp, setDeletingApp] = useState(false);
   const admin = isAdmin(user);
   const name = String(user.user_metadata?.["name"] ?? user.email ?? "User");
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(
-        "sonoma-hub-desktop-preferences-v2",
-      );
-
+      const saved = localStorage.getItem(PREFERENCES_KEY);
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<DesktopPreferences>;
-
         const previousWidth = Number(parsed.dockWidth) || 50;
-
         setPreferences({
           ...DEFAULT_DESKTOP_PREFERENCES,
           ...parsed,
-          // The former 50% width was the old centered dock default.
-          // Upgrade that default to a full-width Windows taskbar.
           dockWidth:
             parsed.dockPosition === "bottom" && previousWidth === 50
               ? 100
               : Math.min(100, Math.max(35, previousWidth)),
-          dockSize: Math.min(
-            68,
-            Math.max(40, Number(parsed.dockSize) || 52),
-          ),
-          glassBlur: Math.min(
-            40,
-            Math.max(12, Number(parsed.glassBlur) || 28),
-          ),
+          dockSize: Math.min(68, Math.max(40, Number(parsed.dockSize) || 52)),
+          glassBlur: Math.min(40, Math.max(12, Number(parsed.glassBlur) || 28)),
         });
       }
     } catch {
-      // Keep the default appearance if stored settings are invalid.
+      // Use default appearance settings if saved preferences are invalid.
     } finally {
       setPreferencesLoaded(true);
     }
@@ -580,49 +534,65 @@ export function Desktop({ user }: { user: User }) {
 
   useEffect(() => {
     if (!preferencesLoaded) return;
-
     try {
-      localStorage.setItem(
-        "sonoma-hub-desktop-preferences-v2",
-        JSON.stringify(preferences),
-      );
+      localStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
     } catch {
-      // Storage may be unavailable in some browser contexts.
+      // Local storage might be unavailable in private browsing.
     }
   }, [preferences, preferencesLoaded]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 10000);
+    const defaults = ["browser", "chat", "settings", ...(admin ? ["admin"] : [])];
+    try {
+      const saved = localStorage.getItem(PINS_KEY);
+      if (saved !== null) {
+        const parsed: unknown = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.every((value) => typeof value === "string")) {
+          setPinnedAppIds(parsed.filter((key) => key !== "launchpad"));
+        } else {
+          setPinnedAppIds(defaults);
+        }
+      } else {
+        setPinnedAppIds(defaults);
+      }
+    } catch {
+      setPinnedAppIds(defaults);
+    } finally {
+      setPinsLoaded(true);
+    }
+  }, [admin]);
 
+  useEffect(() => {
+    if (!pinsLoaded) return;
+    try {
+      localStorage.setItem(PINS_KEY, JSON.stringify(pinnedAppIds));
+    } catch {
+      // Pins still work for the current session if local storage is unavailable.
+    }
+  }, [pinnedAppIds, pinsLoaded]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 10000);
     const load = async () => {
       const { data, error } = await supabase
         .from("hub_apps")
         .select("*")
         .order("created_at");
-
       if (error) {
         console.error("Could not load apps:", error.message);
         return;
       }
-
       setHubApps((data as HubApp[]) ?? []);
     };
-
     void load();
-
     const channel = supabase
       .channel("hub_apps")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "hub_apps",
-        },
+        { event: "*", schema: "public", table: "hub_apps" },
         () => void load(),
       )
       .subscribe();
-
     return () => {
       window.clearInterval(timer);
       void supabase.removeChannel(channel);
@@ -633,20 +603,19 @@ export function Desktop({ user }: { user: User }) {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setLaunchpad(false);
-      }
-
-      if (
-        event.key === "Escape" &&
-        wins.some((win) => win.max && !win.min && !win.closing)
-      ) {
-        setWins((current) =>
-          current.map((win) => ({ ...win, max: false })),
-        );
+        setContextMenu(null);
+        if (wins.some((win) => win.max && !win.min && !win.closing)) {
+          setWins((current) => current.map((win) => ({ ...win, max: false })));
+        }
       }
     };
-
+    const dismissContextMenu = () => setContextMenu(null);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", dismissContextMenu);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("resize", dismissContextMenu);
+    };
   }, [wins]);
 
   const changePreferences = (patch: Partial<DesktopPreferences>) => {
@@ -711,45 +680,32 @@ export function Desktop({ user }: { user: User }) {
     color: app.color,
     render: () => <LinkPicker app={app} />,
   }));
-
   const allApps = [...builtins, ...dynamic];
   const byKey = new Map(allApps.map((app) => [app.key, app]));
-
-  const changeSearch = (value: string) => {
-    setLaunchpadSearch(value);
-    setLaunchpad(true);
-  };
+  const customAppById = new Map(hubApps.map((app) => [app.id, app]));
 
   function open(key: string) {
     if (key === "launchpad") {
       setLaunchpad((previous) => !previous);
       setLaunchpadSearch("");
+      setContextMenu(null);
       return;
     }
-
     const app = byKey.get(key);
     if (!app) return;
-
     setLaunchpad(false);
     setLaunchpadSearch("");
-
+    setContextMenu(null);
     setWins((current) => {
-      const existing = current.find(
-        (win) => win.key === key && !win.closing,
-      );
-
+      const existing = current.find((win) => win.key === key && !win.closing);
       if (existing) {
         return current.map((win) =>
-          win.id === existing.id
-            ? { ...win, min: false, z: ++zTop }
-            : win,
+          win.id === existing.id ? { ...win, min: false, z: ++zTop } : win,
         );
       }
-
       const index = current.length;
       const w = Math.max(320, Math.min(1000, window.innerWidth - 48));
       const h = Math.max(280, Math.min(650, window.innerHeight - 80));
-
       return [
         ...current,
         {
@@ -768,21 +724,69 @@ export function Desktop({ user }: { user: User }) {
     });
   }
 
+  function showAppContextMenu(
+    event: ReactMouseEvent<HTMLElement>,
+    app: Launchable,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 224;
+    const custom = customAppById.has(app.key);
+    const menuHeight = admin && custom ? 148 : 104;
+    setContextMenu({
+      key: app.key,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+    });
+  }
+
+  function togglePin(appKey: string) {
+    if (appKey === "launchpad") return;
+    setPinnedAppIds((current) =>
+      current.includes(appKey)
+        ? current.filter((key) => key !== appKey)
+        : [...current, appKey],
+    );
+    setContextMenu(null);
+  }
+
+  async function deleteCustomApp(appKey: string) {
+    if (!admin) return;
+    const app = customAppById.get(appKey);
+    if (!app) return;
+    const confirmed = window.confirm(
+      `Delete "${app.name}" from Sonoma Hub for everyone? This cannot be undone.`,
+    );
+    if (!confirmed) {
+      setContextMenu(null);
+      return;
+    }
+
+    setDeletingApp(true);
+    const { error } = await supabase.from("hub_apps").delete().eq("id", appKey);
+    setDeletingApp(false);
+    if (error) {
+      window.alert(`Could not delete app: ${error.message}`);
+      return;
+    }
+
+    setHubApps((current) => current.filter((item) => item.id !== appKey));
+    setPinnedAppIds((current) => current.filter((key) => key !== appKey));
+    setWins((current) => current.filter((win) => win.key !== appKey));
+    setContextMenu(null);
+  }
+
   const updateWindow = (id: string, changes: Partial<Win>) => {
     setWins((current) =>
-      current.map((win) =>
-        win.id === id ? { ...win, ...changes } : win,
-      ),
+      current.map((win) => (win.id === id ? { ...win, ...changes } : win)),
     );
   };
-
   const closeWindow = (id: string) => {
     updateWindow(id, { closing: true, max: false });
     window.setTimeout(() => {
       setWins((current) => current.filter((win) => win.id !== id));
     }, 340);
   };
-
   const toggleFullscreen = (id: string) => {
     setWins((current) =>
       current.map((win) =>
@@ -796,62 +800,52 @@ export function Desktop({ user }: { user: User }) {
   const focused = wins
     .filter((win) => !win.min && !win.closing)
     .sort((a, b) => b.z - a.z)[0];
-
   const isFullscreen = wins.some(
     (win) => win.max && !win.min && !win.closing,
   );
-
   const query = launchpadSearch.trim().toLowerCase();
-  const matches = (app: Launchable) =>
-    app.name.toLowerCase().includes(query);
-
+  const matches = (app: Launchable) => app.name.toLowerCase().includes(query);
   const appKind = (app: Launchable) =>
     hubApps.find((source) => source.id === app.key)?.kind;
-
   const sections = [
     {
       key: "proxy",
       title: "Proxies",
-      items: dynamic.filter(
-        (app) => appKind(app) === "proxy" && matches(app),
-      ),
+      items: dynamic.filter((app) => appKind(app) === "proxy" && matches(app)),
     },
     {
       key: "game",
       title: "Games",
-      items: dynamic.filter(
-        (app) => appKind(app) === "game" && matches(app),
-      ),
+      items: dynamic.filter((app) => appKind(app) === "game" && matches(app)),
     },
     {
       key: "app",
-      title: "Pinned",
+      title: "Pinned and apps",
       items: [
-        ...builtins.filter(
-          (app) => app.key !== "launchpad" && matches(app),
-        ),
-        ...dynamic.filter(
-          (app) => appKind(app) === "app" && matches(app),
-        ),
+        ...builtins.filter((app) => app.key !== "launchpad" && matches(app)),
+        ...dynamic.filter((app) => appKind(app) === "app" && matches(app)),
       ],
     },
   ];
 
-  const taskbarApps = builtins.filter((app) => app.key !== "launchpad");
+  const taskbarApps = allApps.filter(
+    (app) => app.key !== "launchpad" && pinnedAppIds.includes(app.key),
+  );
+  const changeSearch = (value: string) => {
+    setLaunchpadSearch(value);
+    setLaunchpad(true);
+  };
+  const wallpaperStyle =
+    preferences.wallpaper === "sonoma"
+      ? undefined
+      : preferences.wallpaper === "custom" && preferences.customWallpaper
+        ? "#101323"
+        : wallpaperStyles[preferences.wallpaper] ?? wallpaperStyles["midnight"];
 
   return (
     <div
       className="fixed inset-0 overflow-hidden text-glass-foreground"
-      style={{
-        background:
-          preferences.wallpaper === "sonoma"
-            ? undefined
-            : preferences.wallpaper === "custom" &&
-                preferences.customWallpaper
-              ? "#101323"
-              : wallpaperStyles[preferences.wallpaper] ??
-                wallpaperStyles.midnight,
-      }}
+      style={{ background: wallpaperStyle }}
     >
       {preferences.wallpaper === "sonoma" && (
         <img
@@ -860,48 +854,26 @@ export function Desktop({ user }: { user: User }) {
           className="pointer-events-none absolute inset-0 h-full w-full object-cover"
         />
       )}
-
-      {preferences.wallpaper === "custom" &&
-        preferences.customWallpaper && (
-          <img
-            src={preferences.customWallpaper}
-            alt=""
-            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-        )}
+      {preferences.wallpaper === "custom" && preferences.customWallpaper && (
+        <img
+          src={preferences.customWallpaper}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
+      )}
 
       <style>{`
         @keyframes start-menu-in {
-          from {
-            opacity: 0;
-            transform: translate(-50%, 18px) scale(0.96);
-            filter: blur(5px);
-          }
-          to {
-            opacity: 1;
-            transform: translate(-50%, 0) scale(1);
-            filter: blur(0);
-          }
+          from { opacity: 0; transform: translate(-50%, 18px) scale(.96); filter: blur(5px); }
+          to { opacity: 1; transform: translate(-50%, 0) scale(1); filter: blur(0); }
         }
-        @keyframes start-backdrop-in {
-          from { opacity: 0; backdrop-filter: blur(0); }
-          to { opacity: 1; }
-        }
-        .sonoma-start-menu {
-          animation: start-menu-in 220ms cubic-bezier(.2,.8,.2,1) both;
-          transform-origin: bottom center;
-        }
-        .sonoma-start-backdrop {
-          animation: start-backdrop-in 160ms ease-out both;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .sonoma-start-menu, .sonoma-start-backdrop {
-            animation: none !important;
-          }
-        }
+        @keyframes start-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+        .sonoma-start-menu { animation: start-menu-in 220ms cubic-bezier(.2,.8,.2,1) both; transform-origin: bottom center; }
+        .sonoma-start-backdrop { animation: start-backdrop-in 160ms ease-out both; }
+        @media (prefers-reduced-motion: reduce) { .sonoma-start-menu, .sonoma-start-backdrop { animation: none !important; } }
       `}</style>
 
       {!isFullscreen && (
@@ -917,7 +889,6 @@ export function Desktop({ user }: { user: User }) {
             <span className="opacity-80">Edit</span>
             <span className="opacity-80">View</span>
             <span className="opacity-80">Window</span>
-
             <span className="ml-auto truncate opacity-90">{name}</span>
             <span className="shrink-0">
               {now.toLocaleDateString(undefined, {
@@ -932,7 +903,6 @@ export function Desktop({ user }: { user: User }) {
               })}
             </span>
           </div>
-
           <div className="absolute left-6 top-12 space-y-3 animate-fade-up">
             <div
               className="w-40 rounded-2xl p-4"
@@ -943,7 +913,6 @@ export function Desktop({ user }: { user: User }) {
               </div>
               <div className="text-5xl font-light">{now.getDate()}</div>
             </div>
-
             <div
               className="w-40 rounded-2xl p-4 text-sm"
               style={glassStyle(preferences.glassBlur, 0.3)}
@@ -958,7 +927,6 @@ export function Desktop({ user }: { user: User }) {
       {wins.map((win) => {
         const app = byKey.get(win.key);
         if (!app) return null;
-
         return (
           <Window
             key={win.id}
@@ -988,17 +956,13 @@ export function Desktop({ user }: { user: User }) {
             role="dialog"
             aria-label="Start menu"
             onClick={(e) => e.stopPropagation()}
-            className="sonoma-start-menu absolute bottom-[68px] left-1/2 flex w-[min(640px,calc(100vw-24px))] max-h-[min(690px,calc(100dvh-92px))] flex-col overflow-hidden rounded-[24px] p-5 sm:p-7"
+            className="sonoma-start-menu absolute bottom-17 left-1/2 flex max-h-[min(690px,calc(100dvh-92px))] w-[min(640px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl p-5 sm:p-7"
             style={glassStyle(preferences.glassBlur + 8, 0.78)}
           >
             <div className="mb-5 flex items-center gap-3">
               <div className="flex-1">
-                <h2 className="text-lg font-semibold tracking-tight">
-                  Start
-                </h2>
-                <p className="mt-0.5 text-xs text-white/55">
-                  Your apps and shortcuts
-                </p>
+                <h2 className="text-lg font-semibold tracking-tight">Start</h2>
+                <p className="mt-0.5 text-xs text-white/55">Your apps and shortcuts</p>
               </div>
               <button
                 type="button"
@@ -1009,7 +973,6 @@ export function Desktop({ user }: { user: User }) {
                 ✕
               </button>
             </div>
-
             <label
               className="mb-5 flex h-10 shrink-0 items-center gap-2 rounded-full px-3"
               style={{
@@ -1027,11 +990,9 @@ export function Desktop({ user }: { user: User }) {
                 style={{ color: "#fff", caretColor: "#fff" }}
               />
             </label>
-
             <div className="min-h-0 flex-1 overflow-y-auto pr-1">
               {sections.map((section) => {
                 if (!section.items.length) return null;
-
                 return (
                   <section key={section.key} className="mb-6 last:mb-0">
                     <div className="mb-3 flex items-center justify-between">
@@ -1042,13 +1003,13 @@ export function Desktop({ user }: { user: User }) {
                         {section.items.length}
                       </span>
                     </div>
-
                     <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
                       {section.items.map((app) => (
                         <button
                           key={app.key}
                           type="button"
                           onClick={() => open(app.key)}
+                          onContextMenu={(event) => showAppContextMenu(event, app)}
                           className="group flex min-w-0 flex-col items-center gap-2 rounded-xl p-3 transition duration-150 hover:bg-white/10 active:scale-[0.97]"
                         >
                           <span className="flex h-10 w-10 items-center justify-center transition-transform duration-150 group-hover:-translate-y-0.5">
@@ -1063,21 +1024,15 @@ export function Desktop({ user }: { user: User }) {
                   </section>
                 );
               })}
-
               {sections.every((section) => section.items.length === 0) && (
-                <p className="py-10 text-center text-sm text-white/60">
-                  No apps found.
-                </p>
+                <p className="py-10 text-center text-sm text-white/60">No apps found.</p>
               )}
             </div>
-
             <div className="mt-5 flex shrink-0 items-center gap-3 border-t border-white/10 pt-4">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">
                 {name[0]?.toUpperCase() ?? "U"}
               </div>
-              <span className="min-w-0 flex-1 truncate text-xs text-white/80">
-                {name}
-              </span>
+              <span className="min-w-0 flex-1 truncate text-xs text-white/80">{name}</span>
               <button
                 type="button"
                 onClick={() => void supabase.auth.signOut()}
@@ -1086,6 +1041,73 @@ export function Desktop({ user }: { user: User }) {
                 Sign out
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {contextMenu && byKey.has(contextMenu.key) && (
+        <div
+          className="fixed inset-0 z-10000"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setContextMenu(null);
+          }}
+        >
+          <div
+            role="menu"
+            aria-label={`${byKey.get(contextMenu.key)?.name ?? "App"} actions`}
+            className="fixed z-10001 min-w-55 rounded-xl p-1.5 text-sm"
+            style={{
+              left: contextMenu.x,
+              top: contextMenu.y,
+              ...glassStyle(preferences.glassBlur + 8, 0.94),
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            {(() => {
+              const app = byKey.get(contextMenu.key);
+              if (!app) return null;
+              const isPinned = pinnedAppIds.includes(app.key);
+              const isCustom = customAppById.has(app.key);
+              return (
+                <>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => open(app.key)}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/10"
+                  >
+                    <span className="w-5 text-center">↗</span>
+                    Open
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => togglePin(app.key)}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-white/10"
+                  >
+                    <span className="w-5 text-center">📌</span>
+                    {isPinned ? "Unpin from taskbar" : "Pin to taskbar"}
+                  </button>
+                  {admin && isCustom && (
+                    <>
+                      <div className="my-1 border-t border-white/10" />
+                      <button
+                        type="button"
+                        role="menuitem"
+                        disabled={deletingApp}
+                        onClick={() => void deleteCustomApp(app.key)}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-red-300 hover:bg-red-500/15 disabled:opacity-50"
+                      >
+                        <span className="w-5 text-center">⌫</span>
+                        {deletingApp ? "Deleting…" : "Delete app for everyone"}
+                      </button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1101,6 +1123,7 @@ export function Desktop({ user }: { user: User }) {
             )
           }
           onOpen={open}
+          onContextMenu={showAppContextMenu}
           preferences={preferences}
           now={now}
           search={launchpadSearch}
