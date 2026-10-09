@@ -4,6 +4,25 @@ import { supabase } from "@/integrations/supabase/client";
 import type { HubApp } from "@/lib/hub";
 import { CHAT_URL } from "@/lib/hub";
 
+export type TabTitlePreset =
+  | "sonoma"
+  | "workspace"
+  | "focus"
+  | "study"
+  | "personal"
+  | "custom";
+
+export const TAB_TITLE_PRESETS: Record<
+  Exclude<TabTitlePreset, "custom">,
+  string
+> = {
+  sonoma: "Sonoma Hub",
+  workspace: "My Workspace",
+  focus: "Focus Mode",
+  study: "Study Desk",
+  personal: "Personal Desktop",
+};
+
 export type DesktopPreferences = {
   wallpaper: "sonoma" | "aurora" | "ocean" | "midnight" | "rose" | "custom";
   customWallpaper: string;
@@ -11,15 +30,19 @@ export type DesktopPreferences = {
   dockWidth: number;
   dockSize: number;
   glassBlur: number;
+  tabTitlePreset: TabTitlePreset;
+  customTabTitle: string;
 };
 
 export const DEFAULT_DESKTOP_PREFERENCES: DesktopPreferences = {
   wallpaper: "sonoma",
   customWallpaper: "",
   dockPosition: "bottom",
-  dockWidth: 50,
+  dockWidth: 100,
   dockSize: 52,
   glassBlur: 28,
+  tabTitlePreset: "sonoma",
+  customTabTitle: "Sonoma Hub",
 };
 
 function iconImageSource(icon: string): string | null {
@@ -44,10 +67,7 @@ function iconImageSource(icon: string): string | null {
   return `${base.endsWith("/") ? base : `${base}/`}${cleaned}`;
 }
 
-/**
- * An app icon can be either an emoji or an image path/URL.
- * Failed images fall back to an emoji instead of showing the path as text.
- */
+/** Supports emoji icons, absolute image paths, and image URLs. */
 export function AppIcon({
   icon,
   className = "",
@@ -111,8 +131,8 @@ export function BrowserApp({
   const [url, setUrl] = useState(initial);
   const [reloadKey, setReloadKey] = useState(0);
 
-  const go = (e: FormEvent) => {
-    e.preventDefault();
+  function go(event: FormEvent) {
+    event.preventDefault();
 
     let nextUrl = input.trim();
 
@@ -124,8 +144,8 @@ export function BrowserApp({
 
     setUrl(nextUrl);
     setInput(nextUrl);
-    setReloadKey((value) => value + 1);
-  };
+    setReloadKey((current) => current + 1);
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -135,7 +155,7 @@ export function BrowserApp({
       >
         <button
           type="button"
-          onClick={() => setReloadKey((value) => value + 1)}
+          onClick={() => setReloadKey((current) => current + 1)}
           className="text-muted-foreground hover:text-foreground"
           aria-label="Refresh page"
           title="Refresh"
@@ -145,9 +165,10 @@ export function BrowserApp({
 
         <input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(event) => setInput(event.target.value)}
           aria-label="Website address or search"
           className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/5 px-3 py-1 text-center text-xs outline-none focus:ring-2 focus:ring-ring"
+          style={{ color: "white", caretColor: "white" }}
         />
 
         <button
@@ -188,7 +209,10 @@ export function LinkPicker({ app }: { app: HubApp }) {
           >
             ← Links
           </button>
-          <span className="truncate text-muted-foreground">{launched}</span>
+
+          <span className="truncate text-muted-foreground">
+            {launched}
+          </span>
         </div>
 
         <div className="min-h-0 flex-1">
@@ -208,6 +232,7 @@ export function LinkPicker({ app }: { app: HubApp }) {
             imageClassName="h-full w-full object-contain"
           />
         </span>
+
         <span className="truncate">{app.name}</span>
       </h2>
 
@@ -217,13 +242,13 @@ export function LinkPicker({ app }: { app: HubApp }) {
 
       <div className="flex min-h-0 flex-1 gap-3">
         {app.urls.map((url, index) => {
-          const open = index === active;
+          const isActive = index === active;
           let hostname = url;
 
           try {
             hostname = new URL(url).hostname;
           } catch {
-            // Show the original URL when it isn't valid.
+            // Keep malformed URLs visible so the admin can spot them.
           }
 
           return (
@@ -232,19 +257,17 @@ export function LinkPicker({ app }: { app: HubApp }) {
               type="button"
               onMouseEnter={() => setActive(index)}
               onFocus={() => setActive(index)}
-              onClick={() => (open ? setLaunched(url) : setActive(index))}
+              onClick={() =>
+                isActive ? setLaunched(url) : setActive(index)
+              }
               style={{
                 background: `linear-gradient(160deg, ${app.color}, oklch(0.18 0.03 270))`,
               }}
               className={`relative min-w-0 overflow-hidden rounded-2xl border border-white/10 text-left transition-all duration-500 ${
-                open ? "flex-5" : "flex-1"
+                isActive ? "flex-5" : "flex-1"
               }`}
             >
-              <span
-                className={`absolute left-4 top-4 flex h-10 w-10 items-center justify-center transition-transform duration-300 ${
-                  open ? "scale-110" : ""
-                }`}
-              >
+              <span className="absolute left-4 top-4 flex h-10 w-10 items-center justify-center">
                 <AppIcon
                   icon={app.icon}
                   className="text-3xl"
@@ -254,7 +277,7 @@ export function LinkPicker({ app }: { app: HubApp }) {
 
               <span
                 className={`absolute bottom-4 left-4 right-4 transition-opacity duration-300 ${
-                  open ? "opacity-100" : "opacity-0"
+                  isActive ? "opacity-100" : "opacity-0"
                 }`}
               >
                 <span className="block text-xs uppercase tracking-widest opacity-70">
@@ -270,7 +293,7 @@ export function LinkPicker({ app }: { app: HubApp }) {
                 </span>
               </span>
 
-              {!open && (
+              {!isActive && (
                 <span className="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm font-semibold opacity-80">
                   {index + 1}
                 </span>
@@ -319,6 +342,15 @@ const wallpaperOptions: {
   },
 ];
 
+function settingCardStyle(blur: number) {
+  return {
+    background: "rgba(255,255,255,0.055)",
+    border: "1px solid rgba(255,255,255,0.09)",
+    backdropFilter: `blur(${blur}px) saturate(160%)`,
+    WebkitBackdropFilter: `blur(${blur}px) saturate(160%)`,
+  };
+}
+
 export function SettingsApp({
   name,
   email,
@@ -338,20 +370,19 @@ export function SettingsApp({
     preferences.customWallpaper,
   );
   const [wallpaperMessage, setWallpaperMessage] = useState("");
+  const cardStyle = settingCardStyle(preferences.glassBlur);
+
+  const inputClass =
+    "w-full rounded-lg border border-white/15 bg-slate-950/40 px-3 py-2 text-sm text-white caret-white outline-none placeholder:text-white/45 selection:bg-violet-500/40 focus:border-white/30 focus:ring-2 focus:ring-violet-400/50";
+
+  const tabTitlePreview =
+    preferences.tabTitlePreset === "custom"
+      ? preferences.customTabTitle.trim() || "Sonoma Hub"
+      : TAB_TITLE_PRESETS[preferences.tabTitlePreset];
 
   useEffect(() => {
     setWallpaperUrl(preferences.customWallpaper);
   }, [preferences.customWallpaper]);
-
-  const cardStyle = {
-    background: "rgba(255,255,255,0.055)",
-    border: "1px solid rgba(255,255,255,0.09)",
-    backdropFilter: `blur(${preferences.glassBlur}px) saturate(160%)`,
-    WebkitBackdropFilter: `blur(${preferences.glassBlur}px) saturate(160%)`,
-  };
-
-  const inputClass =
-    "w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:border-white/30";
 
   function applyCustomWallpaper() {
     try {
@@ -405,6 +436,7 @@ export function SettingsApp({
                 </span>
               )}
             </div>
+
             <div className="break-all text-sm text-muted-foreground">
               {email}
             </div>
@@ -427,12 +459,13 @@ export function SettingsApp({
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => {
-                    onPreferencesChange({ wallpaper: option.value });
-                    setWallpaperMessage(`${option.label} selected.`);
-                  }}
+                  onClick={() =>
+                    onPreferencesChange({ wallpaper: option.value })
+                  }
                   className={`overflow-hidden rounded-xl border text-left transition hover:-translate-y-0.5 ${
-                    selected ? "border-white/80 ring-2 ring-white/20" : "border-white/10"
+                    selected
+                      ? "border-white/80 ring-2 ring-white/20"
+                      : "border-white/10"
                   }`}
                   style={cardStyle}
                 >
@@ -453,13 +486,15 @@ export function SettingsApp({
             <label className="block text-xs font-medium">
               Custom wallpaper image URL
             </label>
+
             <input
               type="url"
               value={wallpaperUrl}
-              onChange={(e) => setWallpaperUrl(e.target.value)}
+              onChange={(event) => setWallpaperUrl(event.target.value)}
               placeholder="https://example.com/wallpaper.jpg"
               className={inputClass}
             />
+
             <button
               type="button"
               onClick={applyCustomWallpaper}
@@ -467,6 +502,7 @@ export function SettingsApp({
             >
               Apply image URL
             </button>
+
             {wallpaperMessage && (
               <p role="status" className="text-xs text-white/65">
                 {wallpaperMessage}
@@ -477,9 +513,76 @@ export function SettingsApp({
 
         <section className="space-y-4 rounded-2xl p-4" style={cardStyle}>
           <div>
+            <h2 className="text-base font-semibold">Browser Tab Title</h2>
+            <p className="mt-1 text-xs text-white/60">
+              Choose a preset or create a custom title for your browser tab.
+            </p>
+          </div>
+
+          <label className="block space-y-2 text-sm">
+            <span>Title template</span>
+            <select
+              value={preferences.tabTitlePreset}
+              onChange={(event) =>
+                onPreferencesChange({
+                  tabTitlePreset: event.target.value as DesktopPreferences["tabTitlePreset"],
+                })
+              }
+              className={inputClass}
+            >
+              <option value="sonoma">Sonoma Hub</option>
+              <option value="workspace">My Workspace</option>
+              <option value="focus">Focus Mode</option>
+              <option value="study">Study Desk</option>
+              <option value="personal">Personal Desktop</option>
+              <option value="custom">Custom title</option>
+            </select>
+          </label>
+
+          {preferences.tabTitlePreset === "custom" && (
+            <label className="block space-y-2 text-sm">
+              <span>Custom title</span>
+              <input
+                type="text"
+                maxLength={60}
+                value={preferences.customTabTitle}
+                onChange={(event) =>
+                  onPreferencesChange({
+                    customTabTitle: event.target.value,
+                  })
+                }
+                placeholder="Enter your title..."
+                className={inputClass}
+              />
+            </label>
+          )}
+
+          <div
+            className="rounded-xl p-3"
+            style={{
+              background: "rgba(255,255,255,0.07)",
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}
+          >
+            <p className="mb-2 text-[10px] uppercase tracking-wider text-white/50">
+              Live preview
+            </p>
+            <div className="flex items-center gap-2 text-sm">
+              <span>🌐</span>
+              <span className="truncate">{tabTitlePreview}</span>
+            </div>
+          </div>
+
+          <p className="text-xs text-white/50">
+            This changes the tab title only; it does not change the website address.
+          </p>
+        </section>
+
+        <section className="space-y-4 rounded-2xl p-4" style={cardStyle}>
+          <div>
             <h2 className="text-base font-semibold">Taskbar</h2>
             <p className="mt-1 text-xs text-white/60">
-              Position and resize the translucent taskbar. Changes are saved on this browser.
+              Position and resize the translucent taskbar. Changes are saved in this browser.
             </p>
           </div>
 
@@ -487,9 +590,9 @@ export function SettingsApp({
             <span>Position</span>
             <select
               value={preferences.dockPosition}
-              onChange={(e) =>
+              onChange={(event) =>
                 onPreferencesChange({
-                  dockPosition: e.target.value as DesktopPreferences["dockPosition"],
+                  dockPosition: event.target.value as DesktopPreferences["dockPosition"],
                 })
               }
               className={inputClass}
@@ -501,51 +604,51 @@ export function SettingsApp({
           </label>
 
           <label className="block space-y-2 text-sm">
-            <span>
-              Taskbar length: {preferences.dockWidth}%
-            </span>
+            <span>Taskbar length: {preferences.dockWidth}%</span>
             <input
               type="range"
               min="35"
-              max="90"
+              max="100"
               step="1"
               value={preferences.dockWidth}
-              onChange={(e) =>
-                onPreferencesChange({ dockWidth: Number(e.target.value) })
+              onChange={(event) =>
+                onPreferencesChange({
+                  dockWidth: Number(event.target.value),
+                })
               }
               className="w-full accent-violet-400"
             />
           </label>
 
           <label className="block space-y-2 text-sm">
-            <span>
-              Taskbar thickness and icon size: {preferences.dockSize}px
-            </span>
+            <span>Taskbar thickness and icon size: {preferences.dockSize}px</span>
             <input
               type="range"
               min="40"
               max="68"
               step="2"
               value={preferences.dockSize}
-              onChange={(e) =>
-                onPreferencesChange({ dockSize: Number(e.target.value) })
+              onChange={(event) =>
+                onPreferencesChange({
+                  dockSize: Number(event.target.value),
+                })
               }
               className="w-full accent-violet-400"
             />
           </label>
 
           <label className="block space-y-2 text-sm">
-            <span>
-              Glass blur: {preferences.glassBlur}px
-            </span>
+            <span>Glass blur: {preferences.glassBlur}px</span>
             <input
               type="range"
               min="12"
               max="40"
               step="2"
               value={preferences.glassBlur}
-              onChange={(e) =>
-                onPreferencesChange({ glassBlur: Number(e.target.value) })
+              onChange={(event) =>
+                onPreferencesChange({
+                  glassBlur: Number(event.target.value),
+                })
               }
               className="w-full accent-violet-400"
             />
@@ -587,12 +690,16 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  async function add(e: FormEvent) {
-    e.preventDefault();
+  const inputClass =
+    "w-full rounded-md border border-white/15 bg-slate-950/40 px-3 py-2 text-sm text-white caret-white outline-none placeholder:text-white/45 selection:bg-violet-500/40 focus:border-white/30 focus:ring-2 focus:ring-violet-400/50";
+
+  async function add(event: FormEvent) {
+    event.preventDefault();
     setMsg(null);
 
     const appName = name.trim();
     const appIcon = icon.trim() || "🌐";
+
     const links =
       mode === "link"
         ? urls
@@ -608,16 +715,17 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
 
     if (
       mode === "link" &&
-      links.some((value) => {
-        try {
-          const parsed = new URL(value);
-          return parsed.protocol !== "http:" && parsed.protocol !== "https:";
-        } catch {
-          return true;
-        }
-      })
+      (!links.length ||
+        links.some((value) => {
+          try {
+            const parsed = new URL(value);
+            return parsed.protocol !== "http:" && parsed.protocol !== "https:";
+          } catch {
+            return true;
+          }
+        }))
     ) {
-      setMsg("Every link must be a valid http:// or https:// URL.");
+      setMsg("Enter one or more valid http:// or https:// links.");
       return;
     }
 
@@ -630,6 +738,7 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
 
     try {
       const hue = Math.floor(Math.random() * 360);
+
       const { error } = await supabase.from("hub_apps").insert({
         name: appName,
         icon: appIcon,
@@ -640,7 +749,7 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
       });
 
       if (error) {
-        setMsg(error.message);
+        setMsg(`Could not add app: ${error.message}`);
       } else {
         setMsg(`Added ${appName}!`);
         setName("");
@@ -656,22 +765,25 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
   }
 
   async function del(id: string) {
-    const confirmed = window.confirm(
-      "Delete this app for everyone? This cannot be undone.",
-    );
-
-    if (!confirmed) return;
+    if (
+      !window.confirm(
+        "Delete this app for everyone? This cannot be undone.",
+      )
+    ) {
+      return;
+    }
 
     const { error } = await supabase.from("hub_apps").delete().eq("id", id);
-    setMsg(error ? error.message : "App deleted.");
-  }
 
-  const inputClass =
-    "w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring";
+    setMsg(error ? `Could not delete app: ${error.message}` : "App deleted.");
+  }
 
   return (
     <div className="grid h-full min-h-0 grid-cols-2 gap-0 overflow-hidden">
-      <form onSubmit={add} className="min-h-0 space-y-3 overflow-auto border-r border-white/10 p-5">
+      <form
+        onSubmit={add}
+        className="min-h-0 space-y-3 overflow-auto border-r border-white/10 p-5"
+      >
         <h2 className="text-lg font-semibold">Add app or proxy</h2>
 
         <div className="flex gap-2">
@@ -679,13 +791,13 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
             aria-label="App icon or image path"
             className={`${inputClass} w-16 shrink-0 text-center`}
             value={icon}
-            onChange={(e) => setIcon(e.target.value)}
+            onChange={(event) => setIcon(event.target.value)}
           />
           <input
             className={inputClass}
             placeholder="Name"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(event) => setName(event.target.value)}
             required
           />
         </div>
@@ -698,7 +810,7 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
           aria-label="App type"
           className={inputClass}
           value={kind}
-          onChange={(e) => setKind(e.target.value)}
+          onChange={(event) => setKind(event.target.value)}
         >
           <option value="proxy">Proxy</option>
           <option value="game">Game</option>
@@ -725,7 +837,7 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
             className={`${inputClass} h-28 font-mono text-xs`}
             placeholder="One link per line"
             value={urls}
-            onChange={(e) => setUrls(e.target.value)}
+            onChange={(event) => setUrls(event.target.value)}
             required
           />
         ) : (
@@ -733,7 +845,7 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
             className={`${inputClass} h-48 font-mono text-xs`}
             placeholder="<html>…</html>"
             value={html}
-            onChange={(e) => setHtml(e.target.value)}
+            onChange={(event) => setHtml(event.target.value)}
             required
           />
         )}
@@ -773,7 +885,10 @@ export function AdminApp({ apps }: { apps: HubApp[] }) {
               </span>
 
               <span className="min-w-0 flex-1 truncate">{app.name}</span>
-              <span className="shrink-0 text-xs text-white/55">{app.kind}</span>
+
+              <span className="shrink-0 text-xs text-white/55">
+                {app.kind}
+              </span>
 
               <button
                 type="button"
