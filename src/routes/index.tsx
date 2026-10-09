@@ -11,7 +11,7 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "Sonoma Hub — Proxies, Games & Apps" },
       { name: "description", content: "A macOS Sonoma–style desktop hub for proxies, games, a browser and chat." },
-      { property: "og:title", content: "Sonoma Hub — Proxies, Games & Apps" },
+      { property: "og:title", content: "Sonoma Hub" },
       { property: "og:description", content: "A macOS Sonoma–style desktop hub for proxies, games, a browser and chat." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
