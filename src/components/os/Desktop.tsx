@@ -1,6 +1,18 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
+import {
+  BatteryCharging,
+  ChevronUp,
+  Compass,
+  LayoutGrid,
+  MessageCircle,
+  Search,
+  Settings as SettingsIcon,
+  Volume2,
+  Wifi,
+  Wrench,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import wallpaper from "@/assets/wallpaper.jpg";
 import { isAdmin, type HubApp } from "@/lib/hub";
@@ -36,7 +48,7 @@ type Win = {
   closing: boolean;
 };
 
-const PREFS_KEY = "sonoma-hub-desktop-preferences-v2";
+let zTop = 10;
 
 const wallpaperStyles: Record<string, string> = {
   aurora:
@@ -49,16 +61,77 @@ const wallpaperStyles: Record<string, string> = {
     "radial-gradient(ellipse at 20% 15%, #fa9bc9 0%, transparent 40%), radial-gradient(ellipse at 85% 70%, #9a6be5 0%, transparent 43%), linear-gradient(145deg, #381d52, #bc668d 55%, #20244c)",
 };
 
-let zTop = 10;
-
 function glassStyle(blur: number, opacity = 0.42): CSSProperties {
   return {
     background: `rgba(22, 25, 43, ${opacity})`,
     backdropFilter: `blur(${blur}px) saturate(175%)`,
     WebkitBackdropFilter: `blur(${blur}px) saturate(175%)`,
-    border: "1px solid rgba(255,255,255,0.17)",
+    border: "1px solid rgba(255,255,255,0.15)",
     boxShadow: "0 12px 36px rgba(0,0,0,0.18)",
   };
+}
+
+function WindowsLogo({ size = 23 }: { size?: number }) {
+  const side = (size - 3) / 2;
+
+  return (
+    <span
+      className="grid shrink-0 grid-cols-2 gap-[3px]"
+      style={{ width: size, height: size }}
+      aria-label="Start"
+    >
+      {Array.from({ length: 4 }, (_, i) => (
+        <span
+          key={i}
+          style={{
+            width: side,
+            height: side,
+            background: "#60a5fa",
+            borderRadius: 1.5,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+function AppGlyph({
+  app,
+  size = 24,
+}: {
+  app: Launchable;
+  size?: number;
+}) {
+  const common = {
+    size,
+    strokeWidth: 1.9,
+  };
+
+  switch (app.key) {
+    case "launchpad":
+      return <LayoutGrid {...common} color="#93c5fd" />;
+    case "browser":
+      return <Compass {...common} color="#7dd3fc" />;
+    case "chat":
+      return <MessageCircle {...common} color="#c4b5fd" />;
+    case "settings":
+      return <SettingsIcon {...common} color="#e2e8f0" />;
+    case "admin":
+      return <Wrench {...common} color="#fca5a5" />;
+    default:
+      return (
+        <span
+          className="flex h-full w-full items-center justify-center"
+          style={{ fontSize: size }}
+        >
+          <AppIcon
+            icon={app.icon}
+            className="leading-none"
+            imageClassName="h-[82%] w-[82%] object-contain"
+          />
+        </span>
+      );
+  }
 }
 
 function Window({
@@ -104,9 +177,9 @@ function Window({
     <div
       onPointerDown={onFocus}
       style={style}
-      className={`absolute flex flex-col overflow-hidden ${
+      className={`absolute flex flex-col overflow-hidden shadow-window ${
         win.max ? "" : "rounded-xl"
-      } shadow-window transition-[width,height,left,top] duration-300 ${
+      } ${
         win.closing || win.min
           ? "animate-genie-out pointer-events-none"
           : "animate-genie-in"
@@ -162,7 +235,7 @@ function Window({
           ))}
         </div>
 
-        <div className="min-w-0 flex-1 truncate px-2 text-center text-xs font-medium text-foreground/80">
+        <div className="min-w-0 flex-1 truncate px-2 text-center text-xs font-medium text-white/85">
           {app.name}
         </div>
 
@@ -176,137 +249,279 @@ function Window({
   );
 }
 
-function Dock({
+function WindowsTaskbar({
   items,
   running,
   onOpen,
   preferences,
+  now,
+  search,
+  onSearchChange,
+  onSearchOpen,
 }: {
   items: Launchable[];
   running: Set<string>;
   onOpen: (key: string) => void;
   preferences: DesktopPreferences;
+  now: Date;
+  search: string;
+  onSearchChange: (value: string) => void;
+  onSearchOpen: () => void;
 }) {
-  const [mouseCoordinate, setMouseCoordinate] = useState<number | null>(null);
-  const [bounce, setBounce] = useState<string | null>(null);
-  const refs = useRef<(HTMLButtonElement | null)[]>([]);
-
   const vertical = preferences.dockPosition !== "bottom";
-  const size = preferences.dockSize;
-  const blur = preferences.glassBlur;
+  const side = preferences.dockPosition;
+  const width = Math.min(100, Math.max(35, preferences.dockWidth));
+
+  const iconSize = Math.round(
+    28 + ((preferences.dockSize - 40) / 28) * 8,
+  );
+
+  const barHeight = Math.max(50, preferences.dockSize + 8);
+  const [trayOpen, setTrayOpen] = useState(false);
 
   const outerStyle: CSSProperties =
-    preferences.dockPosition === "bottom"
+    side === "bottom"
       ? {
-          bottom: 10,
-          left: "50%",
-          transform: "translateX(-50%)",
-          width: `min(${preferences.dockWidth}vw, calc(100vw - 24px))`,
-          minWidth: "min(440px, calc(100vw - 24px))",
+          bottom: width >= 99 ? 0 : 8,
+          left: width >= 99 ? 0 : "50%",
+          transform: width >= 99 ? undefined : "translateX(-50%)",
+          width: width >= 99 ? "100%" : `min(${width}vw, calc(100vw - 20px))`,
+          height: barHeight,
+          borderRadius: width >= 99 ? "14px 14px 0 0" : 20,
         }
       : {
           top: "50%",
           transform: "translateY(-50%)",
-          height: `min(${preferences.dockWidth}vh, calc(100dvh - 24px))`,
-          minHeight: "min(380px, calc(100dvh - 24px))",
-          width: size + 24,
-          ...(preferences.dockPosition === "left"
-            ? { left: 10 }
-            : { right: 10 }),
+          height: `min(${width}vh, calc(100dvh - 24px))`,
+          width: iconSize + 30,
+          ...(side === "left" ? { left: 8 } : { right: 8 }),
+          borderRadius: 22,
         };
 
+  const buttonStyle: CSSProperties = {
+    border: 0,
+    background: "transparent",
+    color: "rgba(255,255,255,0.94)",
+    cursor: "pointer",
+  };
+
   return (
-    <div className="fixed z-9999" style={outerStyle}>
+    <div
+      className="fixed z-9999"
+      style={{
+        ...outerStyle,
+        ...glassStyle(preferences.glassBlur + 4, 0.58),
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: vertical ? "10px 5px" : "0 10px",
+        boxSizing: "border-box",
+      }}
+    >
       <div
-        onMouseMove={(e) =>
-          setMouseCoordinate(vertical ? e.clientY : e.clientX)
-        }
-        onMouseLeave={() => setMouseCoordinate(null)}
-        style={{
-          ...glassStyle(blur + 6, 0.44),
-          width: "100%",
-          height: "100%",
-          padding: 7,
-          borderRadius: 23,
-          display: "flex",
-          flexDirection: vertical ? "column" : "row",
-          alignItems: "center",
-          justifyContent: vertical ? "center" : "space-evenly",
-          gap: 4,
-          overflow: "visible",
-        }}
+        className={`flex h-full items-center ${
+          vertical ? "w-full flex-col justify-center gap-2" : "gap-1"
+        }`}
       >
-        {items.map((it, i) => {
-          const el = refs.current[i];
-          let scale = 1;
+        {/* Windows Start button */}
+        <button
+          type="button"
+          title="Start"
+          aria-label="Open Start menu"
+          onClick={onSearchOpen}
+          className="flex shrink-0 items-center justify-center rounded-xl transition hover:bg-white/10 active:scale-95"
+          style={{
+            ...buttonStyle,
+            width: iconSize + 8,
+            height: iconSize + 8,
+          }}
+        >
+          <WindowsLogo size={iconSize * 0.78} />
+        </button>
 
-          if (mouseCoordinate !== null && el) {
-            const rect = el.getBoundingClientRect();
-            const center = vertical
-              ? rect.top + rect.height / 2
-              : rect.left + rect.width / 2;
+        {/* Windows-like search pill */}
+        {vertical ? (
+          <button
+            type="button"
+            aria-label="Search apps"
+            title="Search apps"
+            onClick={onSearchOpen}
+            className="flex items-center justify-center rounded-xl transition hover:bg-white/10"
+            style={{
+              ...buttonStyle,
+              width: iconSize + 8,
+              height: iconSize + 8,
+            }}
+          >
+            <Search size={19} strokeWidth={1.9} />
+          </button>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onSearchOpen();
+            }}
+            className="mx-1 flex shrink items-center gap-2 rounded-full px-3 transition hover:bg-white/10"
+            style={{
+              background: "rgba(255,255,255,0.11)",
+              border: "1px solid rgba(255,255,255,0.09)",
+              width: "clamp(130px, 17vw, 230px)",
+              height: 36,
+              minWidth: 100,
+            }}
+          >
+            <Search
+              size={17}
+              className="shrink-0 text-white/75"
+            />
+            <input
+              value={search}
+              onFocus={onSearchOpen}
+              onClick={onSearchOpen}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search"
+              aria-label="Search apps"
+              className="w-full min-w-0 border-0 bg-transparent text-sm text-white outline-none placeholder:text-white/65"
+              style={{ color: "#fff", caretColor: "#fff" }}
+            />
+          </form>
+        )}
 
-            const distance = Math.abs(mouseCoordinate - center);
-            scale = 1 + Math.max(0, 1 - distance / 150) * 0.28;
-          }
+        {/* Pinned applications */}
+        {items.map((app) => (
+          <button
+            key={app.key}
+            type="button"
+            title={app.name}
+            aria-label={`Open ${app.name}`}
+            onClick={() => onOpen(app.key)}
+            className="group relative flex shrink-0 items-center justify-center rounded-xl transition duration-150 hover:bg-white/10 active:scale-95"
+            style={{
+              ...buttonStyle,
+              width: iconSize + 8,
+              height: iconSize + 8,
+            }}
+          >
+            <AppGlyph app={app} size={iconSize * 0.72} />
 
-          return (
-            <button
-              key={it.key}
-              ref={(r) => {
-                refs.current[i] = r;
-              }}
-              type="button"
-              aria-label={`Open ${it.name}`}
-              title={it.name}
-              onClick={() => {
-                setBounce(it.key);
-                window.setTimeout(() => setBounce(null), 700);
-                onOpen(it.key);
-              }}
-              className={`group relative flex shrink-0 items-center justify-center border-0 bg-transparent p-1 ${
-                vertical ? "w-full flex-col" : "h-full flex-1 flex-col"
-              }`}
-              style={{
-                minWidth: vertical ? undefined : size + 14,
-                flex: vertical ? "0 0 auto" : "1 1 0%",
-              }}
-            >
+            {running.has(app.key) && (
               <span
-                className="pointer-events-none absolute -top-9 left-1/2 z-20 -translate-x-1/2 truncate whitespace-nowrap rounded-lg px-3 py-1.5 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
-                style={glassStyle(blur, 0.72)}
-              >
-                {it.name}
-              </span>
-
-              <span
-                className={`flex shrink-0 items-center justify-center rounded-[22%] shadow-lg ${
-                  bounce === it.key ? "animate-dock-bounce" : ""
-                }`}
+                className="absolute bottom-0 rounded-full"
                 style={{
-                  height: size,
-                  width: size,
-                  background: `linear-gradient(155deg, ${it.color}, color-mix(in oklab, ${it.color} 54%, black))`,
-                  transform: `scale(${scale})`,
-                  transformOrigin: "center center",
-                  transition: "transform 120ms ease-out",
+                  width: 12,
+                  height: 3,
+                  background: "#93c5fd",
+                }}
+              />
+            )}
+
+            <span
+              className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 -translate-x-1/2 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+              style={glassStyle(preferences.glassBlur, 0.88)}
+            >
+              {app.name}
+            </span>
+          </button>
+        ))}
+
+        {/* System tray and clock */}
+        {!vertical && (
+          <div
+            className="ml-auto flex h-full shrink-0 items-center gap-2 pl-3"
+            style={{ color: "rgba(255,255,255,0.94)" }}
+          >
+            <button
+              type="button"
+              title="Background applications"
+              aria-label="Background applications"
+              onClick={() => setTrayOpen((v) => !v)}
+              className="rounded-md p-1 hover:bg-white/10"
+              style={buttonStyle}
+            >
+              <ChevronUp size={15} />
+            </button>
+
+            <button
+              type="button"
+              title="Network"
+              aria-label="Network"
+              className="hidden rounded-md p-1 hover:bg-white/10 sm:flex"
+              style={buttonStyle}
+            >
+              <Wifi size={17} />
+            </button>
+
+            <button
+              type="button"
+              title="Volume"
+              aria-label="Volume"
+              className="hidden rounded-md p-1 hover:bg-white/10 sm:flex"
+              style={buttonStyle}
+            >
+              <Volume2 size={17} />
+            </button>
+
+            <BatteryCharging size={18} />
+
+            <div className="ml-1 flex flex-col items-end justify-center whitespace-nowrap text-[11px] leading-[1.35]">
+              <span>
+                {now.toLocaleTimeString([], {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+              <span>
+                {now.toLocaleDateString([], {
+                  month: "numeric",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
+
+            {trayOpen && (
+              <div
+                className="absolute bottom-full right-3 mb-3 rounded-2xl p-4 shadow-xl"
+                style={{
+                  ...glassStyle(preferences.glassBlur + 6, 0.86),
+                  width: 220,
                 }}
               >
-                <AppIcon
-                  icon={it.icon}
-                  className="leading-none"
-                  imageClassName="h-[74%] w-[74%] object-contain"
-                />
-              </span>
+                <div className="mb-3 text-sm font-semibold">
+                  Quick settings
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 rounded-xl bg-white/10 p-3">
+                    <Wifi size={16} /> Wi-Fi
+                  </div>
+                  <div className="flex items-center gap-2 rounded-xl bg-white/10 p-3">
+                    <Volume2 size={16} /> Volume
+                  </div>
+                </div>
+                <div className="mt-3 text-[10px] text-white/60">
+                  Display settings are available in Sonoma Hub Settings.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
-              <span
-                className={`mt-1 h-1 w-1 rounded-full bg-foreground ${
-                  running.has(it.key) ? "opacity-90" : "opacity-0"
-                }`}
-              />
-            </button>
-          );
-        })}
+        {vertical && (
+          <div className="mt-auto flex flex-col items-center gap-3 pt-3">
+            <Wifi size={16} />
+            <Volume2 size={16} />
+            <BatteryCharging size={17} />
+            <span
+              className="text-[10px] text-white/80"
+              style={{ writingMode: "vertical-rl" }}
+            >
+              {now.toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -328,21 +543,36 @@ export function Desktop({ user }: { user: User }) {
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(PREFS_KEY);
+      const saved = localStorage.getItem(
+        "sonoma-hub-desktop-preferences-v2",
+      );
 
       if (saved) {
         const parsed = JSON.parse(saved) as Partial<DesktopPreferences>;
 
+        const previousWidth = Number(parsed.dockWidth) || 50;
+
         setPreferences({
           ...DEFAULT_DESKTOP_PREFERENCES,
           ...parsed,
-          dockWidth: Math.min(90, Math.max(35, Number(parsed.dockWidth) || 50)),
-          dockSize: Math.min(68, Math.max(40, Number(parsed.dockSize) || 52)),
-          glassBlur: Math.min(40, Math.max(12, Number(parsed.glassBlur) || 28)),
+          // The former 50% width was the old centered dock default.
+          // Upgrade that default to a full-width Windows taskbar.
+          dockWidth:
+            parsed.dockPosition === "bottom" && previousWidth === 50
+              ? 100
+              : Math.min(100, Math.max(35, previousWidth)),
+          dockSize: Math.min(
+            68,
+            Math.max(40, Number(parsed.dockSize) || 52),
+          ),
+          glassBlur: Math.min(
+            40,
+            Math.max(12, Number(parsed.glassBlur) || 28),
+          ),
         });
       }
     } catch {
-      // Keep defaults if saved preferences cannot be read.
+      // Keep the default appearance if stored settings are invalid.
     } finally {
       setPreferencesLoaded(true);
     }
@@ -352,9 +582,12 @@ export function Desktop({ user }: { user: User }) {
     if (!preferencesLoaded) return;
 
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify(preferences));
+      localStorage.setItem(
+        "sonoma-hub-desktop-preferences-v2",
+        JSON.stringify(preferences),
+      );
     } catch {
-      // The desktop continues to work even if storage is unavailable.
+      // Storage may be unavailable in some browser contexts.
     }
   }, [preferences, preferencesLoaded]);
 
@@ -396,6 +629,26 @@ export function Desktop({ user }: { user: User }) {
     };
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLaunchpad(false);
+      }
+
+      if (
+        event.key === "Escape" &&
+        wins.some((win) => win.max && !win.min && !win.closing)
+      ) {
+        setWins((current) =>
+          current.map((win) => ({ ...win, max: false })),
+        );
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [wins]);
+
   const changePreferences = (patch: Partial<DesktopPreferences>) => {
     setPreferences((current) => ({ ...current, ...patch }));
   };
@@ -403,30 +656,30 @@ export function Desktop({ user }: { user: User }) {
   const builtins: Launchable[] = [
     {
       key: "launchpad",
-      name: "Launchpad",
+      name: "Start",
       icon: "🚀",
-      color: "oklch(0.45 0.05 270)",
+      color: "#2563eb",
       render: () => null,
     },
     {
       key: "browser",
       name: "Browser",
       icon: "🧭",
-      color: "oklch(0.6 0.17 235)",
+      color: "#0ea5e9",
       render: () => <BrowserApp />,
     },
     {
       key: "chat",
       name: "Chat",
       icon: "💬",
-      color: "oklch(0.68 0.18 150)",
+      color: "#10b981",
       render: () => <ChatApp />,
     },
     {
       key: "settings",
       name: "Settings",
       icon: "⚙️",
-      color: "oklch(0.55 0.01 270)",
+      color: "#64748b",
       render: () => (
         <SettingsApp
           name={name}
@@ -444,7 +697,7 @@ export function Desktop({ user }: { user: User }) {
             key: "admin",
             name: "Admin",
             icon: "🛠️",
-            color: "oklch(0.6 0.2 25)",
+            color: "#dc2626",
             render: () => <AdminApp apps={hubApps} />,
           },
         ]
@@ -462,6 +715,11 @@ export function Desktop({ user }: { user: User }) {
   const allApps = [...builtins, ...dynamic];
   const byKey = new Map(allApps.map((app) => [app.key, app]));
 
+  const changeSearch = (value: string) => {
+    setLaunchpadSearch(value);
+    setLaunchpad(true);
+  };
+
   function open(key: string) {
     if (key === "launchpad") {
       setLaunchpad((previous) => !previous);
@@ -473,6 +731,7 @@ export function Desktop({ user }: { user: User }) {
     if (!app) return;
 
     setLaunchpad(false);
+    setLaunchpadSearch("");
 
     setWins((current) => {
       const existing = current.find(
@@ -488,18 +747,18 @@ export function Desktop({ user }: { user: User }) {
       }
 
       const index = current.length;
-      const width = Math.max(320, Math.min(1000, window.innerWidth - 48));
-      const height = Math.max(280, Math.min(650, window.innerHeight - 80));
+      const w = Math.max(320, Math.min(1000, window.innerWidth - 48));
+      const h = Math.max(280, Math.min(650, window.innerHeight - 80));
 
       return [
         ...current,
         {
           id: crypto.randomUUID(),
           key,
-          x: Math.min(40 + index * 28, Math.max(0, window.innerWidth - width)),
+          x: Math.min(40 + index * 28, Math.max(0, window.innerWidth - w)),
           y: Math.min(40 + index * 28, Math.max(28, window.innerHeight - 100)),
-          w: width,
-          h: height,
+          w,
+          h,
           z: ++zTop,
           min: false,
           max: false,
@@ -519,7 +778,6 @@ export function Desktop({ user }: { user: User }) {
 
   const closeWindow = (id: string) => {
     updateWindow(id, { closing: true, max: false });
-
     window.setTimeout(() => {
       setWins((current) => current.filter((win) => win.id !== id));
     }, 340);
@@ -543,52 +801,56 @@ export function Desktop({ user }: { user: User }) {
     (win) => win.max && !win.min && !win.closing,
   );
 
-  const matchesSearch = (app: Launchable) =>
-    app.name.toLowerCase().includes(launchpadSearch.trim().toLowerCase());
+  const query = launchpadSearch.trim().toLowerCase();
+  const matches = (app: Launchable) =>
+    app.name.toLowerCase().includes(query);
 
   const appKind = (app: Launchable) =>
     hubApps.find((source) => source.id === app.key)?.kind;
 
-  const launchpadSections = [
+  const sections = [
     {
       key: "proxy",
       title: "Proxies",
       items: dynamic.filter(
-        (app) => appKind(app) === "proxy" && matchesSearch(app),
+        (app) => appKind(app) === "proxy" && matches(app),
       ),
     },
     {
       key: "game",
       title: "Games",
       items: dynamic.filter(
-        (app) => appKind(app) === "game" && matchesSearch(app),
+        (app) => appKind(app) === "game" && matches(app),
       ),
     },
     {
       key: "app",
-      title: "Apps",
+      title: "Pinned",
       items: [
         ...builtins.filter(
-          (app) => app.key !== "launchpad" && matchesSearch(app),
+          (app) => app.key !== "launchpad" && matches(app),
         ),
         ...dynamic.filter(
-          (app) => appKind(app) === "app" && matchesSearch(app),
+          (app) => appKind(app) === "app" && matches(app),
         ),
       ],
     },
   ];
 
-  const blurredPanel = glassStyle(preferences.glassBlur, 0.25);
+  const taskbarApps = builtins.filter((app) => app.key !== "launchpad");
 
   return (
     <div
       className="fixed inset-0 overflow-hidden text-glass-foreground"
       style={{
         background:
-          preferences.wallpaper === "sonoma" ||
-          (preferences.wallpaper === "custom" && preferences.customWallpaper)
-            ? "#101323"
-            : wallpaperStyles[preferences.wallpaper] ?? wallpaperStyles.midnight,
+          preferences.wallpaper === "sonoma"
+            ? undefined
+            : preferences.wallpaper === "custom" &&
+                preferences.customWallpaper
+              ? "#101323"
+              : wallpaperStyles[preferences.wallpaper] ??
+                wallpaperStyles.midnight,
       }}
     >
       {preferences.wallpaper === "sonoma" && (
@@ -599,16 +861,48 @@ export function Desktop({ user }: { user: User }) {
         />
       )}
 
-      {preferences.wallpaper === "custom" && preferences.customWallpaper && (
-        <img
-          src={preferences.customWallpaper}
-          alt=""
-          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
-      )}
+      {preferences.wallpaper === "custom" &&
+        preferences.customWallpaper && (
+          <img
+            src={preferences.customWallpaper}
+            alt=""
+            className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        )}
+
+      <style>{`
+        @keyframes start-menu-in {
+          from {
+            opacity: 0;
+            transform: translate(-50%, 18px) scale(0.96);
+            filter: blur(5px);
+          }
+          to {
+            opacity: 1;
+            transform: translate(-50%, 0) scale(1);
+            filter: blur(0);
+          }
+        }
+        @keyframes start-backdrop-in {
+          from { opacity: 0; backdrop-filter: blur(0); }
+          to { opacity: 1; }
+        }
+        .sonoma-start-menu {
+          animation: start-menu-in 220ms cubic-bezier(.2,.8,.2,1) both;
+          transform-origin: bottom center;
+        }
+        .sonoma-start-backdrop {
+          animation: start-backdrop-in 160ms ease-out both;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .sonoma-start-menu, .sonoma-start-backdrop {
+            animation: none !important;
+          }
+        }
+      `}</style>
 
       {!isFullscreen && (
         <>
@@ -619,14 +913,12 @@ export function Desktop({ user }: { user: User }) {
             <span className="font-semibold">
               {focused ? byKey.get(focused.key)?.name : "Finder"}
             </span>
-
             <span className="opacity-80">File</span>
             <span className="opacity-80">Edit</span>
             <span className="opacity-80">View</span>
             <span className="opacity-80">Window</span>
 
             <span className="ml-auto truncate opacity-90">{name}</span>
-
             <span className="shrink-0">
               {now.toLocaleDateString(undefined, {
                 weekday: "short",
@@ -644,7 +936,7 @@ export function Desktop({ user }: { user: User }) {
           <div className="absolute left-6 top-12 space-y-3 animate-fade-up">
             <div
               className="w-40 rounded-2xl p-4"
-              style={blurredPanel}
+              style={glassStyle(preferences.glassBlur, 0.3)}
             >
               <div className="text-xs uppercase opacity-70">
                 {now.toLocaleDateString(undefined, { weekday: "long" })}
@@ -654,7 +946,7 @@ export function Desktop({ user }: { user: User }) {
 
             <div
               className="w-40 rounded-2xl p-4 text-sm"
-              style={blurredPanel}
+              style={glassStyle(preferences.glassBlur, 0.3)}
             >
               <div className="opacity-70">Apps live</div>
               <div className="text-3xl font-semibold">{hubApps.length}</div>
@@ -684,101 +976,123 @@ export function Desktop({ user }: { user: User }) {
 
       {launchpad && !isFullscreen && (
         <div
+          className="sonoma-start-backdrop fixed inset-0 z-9990"
           onClick={() => setLaunchpad(false)}
-          className="fixed inset-0 z-9990 overflow-auto px-5 pb-32 pt-12 md:px-[10vw] md:pt-16"
           style={{
-            background: "rgba(10,12,23,0.28)",
-            backdropFilter: `blur(${preferences.glassBlur + 10}px) saturate(165%)`,
-            WebkitBackdropFilter: `blur(${preferences.glassBlur + 10}px) saturate(165%)`,
+            background: "rgba(8,10,20,0.14)",
+            backdropFilter: `blur(${Math.round(preferences.glassBlur * 0.3)}px)`,
+            WebkitBackdropFilter: `blur(${Math.round(preferences.glassBlur * 0.3)}px)`,
           }}
         >
           <div
-            className="mx-auto max-w-6xl rounded-3xl p-6 md:p-8"
-            style={glassStyle(preferences.glassBlur + 4, 0.42)}
+            role="dialog"
+            aria-label="Start menu"
             onClick={(e) => e.stopPropagation()}
+            className="sonoma-start-menu absolute bottom-[68px] left-1/2 flex w-[min(640px,calc(100vw-24px))] max-h-[min(690px,calc(100dvh-92px))] flex-col overflow-hidden rounded-[24px] p-5 sm:p-7"
+            style={glassStyle(preferences.glassBlur + 8, 0.78)}
           >
-            <div className="mb-8 flex flex-wrap items-center gap-4">
+            <div className="mb-5 flex items-center gap-3">
               <div className="flex-1">
-                <h2 className="text-2xl font-semibold tracking-tight">
-                  Launchpad
+                <h2 className="text-lg font-semibold tracking-tight">
+                  Start
                 </h2>
-                <p className="mt-1 text-sm text-white/65">
-                  Your apps, games and proxies
+                <p className="mt-0.5 text-xs text-white/55">
+                  Your apps and shortcuts
                 </p>
               </div>
-
-              <label className="min-w-[220px] flex-1 md:max-w-sm">
-                <span className="sr-only">Search apps</span>
-                <input
-                  value={launchpadSearch}
-                  onChange={(e) => setLaunchpadSearch(e.target.value)}
-                  placeholder="Search apps…"
-                  className="w-full rounded-xl border border-white/15 bg-black/15 px-4 py-2.5 text-sm outline-none placeholder:text-white/50 focus:border-white/35"
-                />
-              </label>
-
               <button
                 type="button"
                 onClick={() => setLaunchpad(false)}
-                aria-label="Close Launchpad"
-                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+                aria-label="Close Start menu"
+                className="rounded-lg px-3 py-2 text-sm text-white/75 hover:bg-white/10"
               >
                 ✕
               </button>
             </div>
 
-            {launchpadSections.map((section) => {
-              if (!section.items.length) return null;
+            <label
+              className="mb-5 flex h-10 shrink-0 items-center gap-2 rounded-full px-3"
+              style={{
+                background: "rgba(255,255,255,0.095)",
+                border: "1px solid rgba(255,255,255,0.13)",
+              }}
+            >
+              <Search size={17} className="text-white/65" />
+              <input
+                value={launchpadSearch}
+                onChange={(e) => setLaunchpadSearch(e.target.value)}
+                placeholder="Search apps"
+                aria-label="Search apps"
+                className="w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-white/55"
+                style={{ color: "#fff", caretColor: "#fff" }}
+              />
+            </label>
 
-              return (
-                <section key={section.key} className="mb-9 last:mb-0">
-                  <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-white/65">
-                    {section.title}
-                  </h3>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+              {sections.map((section) => {
+                if (!section.items.length) return null;
 
-                  <div className="grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7">
-                    {section.items.map((app) => (
-                      <button
-                        key={app.key}
-                        type="button"
-                        onClick={() => open(app.key)}
-                        className="group flex min-w-0 flex-col items-center gap-2 rounded-2xl p-2 transition hover:bg-white/10"
-                      >
-                        <span
-                          className="flex h-[68px] w-[68px] items-center justify-center rounded-[22%] shadow-xl transition duration-200 group-hover:-translate-y-1 group-hover:scale-105"
-                          style={{
-                            background: `linear-gradient(155deg, ${app.color}, color-mix(in oklab, ${app.color} 54%, black))`,
-                          }}
+                return (
+                  <section key={section.key} className="mb-6 last:mb-0">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-xs font-semibold tracking-wide text-white/70">
+                        {section.title}
+                      </h3>
+                      <span className="text-[10px] text-white/45">
+                        {section.items.length}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 sm:gap-3">
+                      {section.items.map((app) => (
+                        <button
+                          key={app.key}
+                          type="button"
+                          onClick={() => open(app.key)}
+                          className="group flex min-w-0 flex-col items-center gap-2 rounded-xl p-3 transition duration-150 hover:bg-white/10 active:scale-[0.97]"
                         >
-                          <AppIcon
-                            icon={app.icon}
-                            className="text-4xl leading-none"
-                            imageClassName="h-[76%] w-[76%] object-contain"
-                          />
-                        </span>
+                          <span className="flex h-10 w-10 items-center justify-center transition-transform duration-150 group-hover:-translate-y-0.5">
+                            <AppGlyph app={app} size={30} />
+                          </span>
+                          <span className="w-full truncate text-center text-xs text-white/90">
+                            {app.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
 
-                        <span className="w-full truncate text-center text-xs text-white/90">
-                          {app.name}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
+              {sections.every((section) => section.items.length === 0) && (
+                <p className="py-10 text-center text-sm text-white/60">
+                  No apps found.
+                </p>
+              )}
+            </div>
 
-            {launchpadSections.every((section) => section.items.length === 0) && (
-              <p className="py-12 text-center text-sm text-white/60">
-                No apps found. Try a different search.
-              </p>
-            )}
+            <div className="mt-5 flex shrink-0 items-center gap-3 border-t border-white/10 pt-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-xs font-semibold">
+                {name[0]?.toUpperCase() ?? "U"}
+              </div>
+              <span className="min-w-0 flex-1 truncate text-xs text-white/80">
+                {name}
+              </span>
+              <button
+                type="button"
+                onClick={() => void supabase.auth.signOut()}
+                className="rounded-lg px-3 py-2 text-xs text-white/65 hover:bg-white/10 hover:text-white"
+              >
+                Sign out
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {!isFullscreen && (
-        <Dock
-          items={builtins}
+        <WindowsTaskbar
+          items={taskbarApps}
           running={
             new Set(
               wins
@@ -788,6 +1102,10 @@ export function Desktop({ user }: { user: User }) {
           }
           onOpen={open}
           preferences={preferences}
+          now={now}
+          search={launchpadSearch}
+          onSearchChange={changeSearch}
+          onSearchOpen={() => setLaunchpad(true)}
         />
       )}
     </div>
