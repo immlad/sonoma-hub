@@ -195,22 +195,22 @@ function Window({
       <div
         className="flex h-9 shrink-0 cursor-default select-none items-center px-3"
         onDoubleClick={onMax}
-        onPointerDown={(e) => {
-          if ((e.target as HTMLElement).closest("button")) return;
+        onPointerDown={(event) => {
+          if ((event.target as HTMLElement).closest("button")) return;
           if (win.max) return;
 
           drag.current = {
-            dx: e.clientX - win.x,
-            dy: e.clientY - win.y,
+            dx: event.clientX - win.x,
+            dy: event.clientY - win.y,
           };
 
-          e.currentTarget.setPointerCapture(e.pointerId);
+          event.currentTarget.setPointerCapture(event.pointerId);
         }}
-        onPointerMove={(e) => {
+        onPointerMove={(event) => {
           if (drag.current && !win.max) {
             onMove(
-              e.clientX - drag.current.dx,
-              Math.max(28, e.clientY - drag.current.dy),
+              event.clientX - drag.current.dx,
+              Math.max(28, event.clientY - drag.current.dy),
             );
           }
         }}
@@ -226,9 +226,9 @@ function Window({
             ["bg-traffic-red", onClose, "×", "Close"],
             ["bg-traffic-yellow", onMin, "−", "Minimize"],
             ["bg-traffic-green", onMax, "+", "Toggle fullscreen"],
-          ].map(([color, action, symbol, label], i) => (
+          ].map(([color, action, symbol, label], index) => (
             <button
-              key={i}
+              key={index}
               type="button"
               aria-label={label as string}
               title={label as string}
@@ -249,9 +249,7 @@ function Window({
         <div className="w-12 shrink-0" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {app.render()}
-      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">{app.render()}</div>
     </div>
   );
 }
@@ -283,9 +281,11 @@ function WindowsTaskbar({
   const vertical = preferences.dockPosition !== "bottom";
   const side = preferences.dockPosition;
   const width = Math.min(100, Math.max(35, preferences.dockWidth));
+
   const iconSize = Math.round(
     28 + ((preferences.dockSize - 40) / 28) * 8,
   );
+
   const barHeight = Math.max(50, preferences.dockSize + 8);
   const [trayOpen, setTrayOpen] = useState(false);
 
@@ -368,8 +368,8 @@ function WindowsTaskbar({
           </button>
         ) : (
           <form
-            onSubmit={(e) => {
-              e.preventDefault();
+            onSubmit={(event) => {
+              event.preventDefault();
               onSearchOpen();
             }}
             className="mx-1 flex shrink items-center gap-2 rounded-full px-3 transition hover:bg-white/10"
@@ -382,12 +382,11 @@ function WindowsTaskbar({
             }}
           >
             <Search size={17} className="shrink-0 text-white/75" />
-
             <input
               value={search}
               onFocus={onSearchOpen}
               onClick={onSearchOpen}
-              onChange={(e) => onSearchChange(e.target.value)}
+              onChange={(event) => onSearchChange(event.target.value)}
               placeholder="Search"
               aria-label="Search apps"
               className="w-full min-w-0 border-0 bg-transparent text-sm text-white outline-none placeholder:text-white/65"
@@ -438,7 +437,7 @@ function WindowsTaskbar({
               type="button"
               title="Background applications"
               aria-label="Background applications"
-              onClick={() => setTrayOpen((v) => !v)}
+              onClick={() => setTrayOpen((value) => !value)}
               className="rounded-md p-1 hover:bg-white/10"
               style={buttonStyle}
             >
@@ -538,6 +537,7 @@ export function Desktop({ user }: { user: User }) {
   const [pinsLoaded, setPinsLoaded] = useState(false);
   const [contextMenu, setContextMenu] = useState<AppContextMenuState>(null);
   const [deletingApp, setDeletingApp] = useState(false);
+  const [activeOsMenu, setActiveOsMenu] = useState<string | null>(null);
 
   const admin = isAdmin(user);
   const name = String(user.user_metadata?.["name"] ?? user.email ?? "User");
@@ -557,7 +557,10 @@ export function Desktop({ user }: { user: User }) {
             parsed.dockPosition === "bottom" && previousWidth === 50
               ? 100
               : Math.min(100, Math.max(35, previousWidth)),
-          dockSize: Math.min(68, Math.max(40, Number(parsed.dockSize) || 52)),
+          dockSize: Math.min(
+            68,
+            Math.max(40, Number(parsed.dockSize) || 52),
+          ),
           glassBlur: Math.min(
             40,
             Math.max(12, Number(parsed.glassBlur) || 28),
@@ -597,6 +600,30 @@ export function Desktop({ user }: { user: User }) {
   ]);
 
   useEffect(() => {
+    if (!preferencesLoaded) return;
+
+    let iconLink = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+
+    if (!iconLink) {
+      iconLink = document.createElement("link");
+      iconLink.rel = "icon";
+      document.head.appendChild(iconLink);
+    }
+
+    if (!iconLink.dataset["sonomaOriginalHref"]) {
+      iconLink.dataset["sonomaOriginalHref"] = iconLink.href;
+    }
+
+    const customIcon = preferences.customTabIcon.trim();
+
+    if (customIcon) {
+      iconLink.href = customIcon;
+    } else {
+      iconLink.href = iconLink.dataset["sonomaOriginalHref"] ?? "";
+    }
+  }, [preferencesLoaded, preferences.customTabIcon]);
+
+  useEffect(() => {
     const defaults = [
       "browser",
       "chat",
@@ -634,7 +661,7 @@ export function Desktop({ user }: { user: User }) {
     try {
       localStorage.setItem(PINS_KEY, JSON.stringify(pinnedAppIds));
     } catch {
-      // Pins still work for the current session if local storage is unavailable.
+      // Pins still work for this session if local storage is unavailable.
     }
   }, [pinnedAppIds, pinsLoaded]);
 
@@ -677,6 +704,7 @@ export function Desktop({ user }: { user: User }) {
       if (event.key === "Escape") {
         setLaunchpad(false);
         setContextMenu(null);
+        setActiveOsMenu(null);
 
         if (wins.some((win) => win.max && !win.min && !win.closing)) {
           setWins((current) =>
@@ -696,6 +724,25 @@ export function Desktop({ user }: { user: User }) {
       window.removeEventListener("resize", dismissContextMenu);
     };
   }, [wins]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+
+      if (
+        !(target instanceof Element) ||
+        !target.closest("[data-os-menu-root]")
+      ) {
+        setActiveOsMenu(null);
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, []);
 
   const changePreferences = (patch: Partial<DesktopPreferences>) => {
     setPreferences((current) => ({ ...current, ...patch }));
@@ -769,6 +816,7 @@ export function Desktop({ user }: { user: User }) {
       setLaunchpad((previous) => !previous);
       setLaunchpadSearch("");
       setContextMenu(null);
+      setActiveOsMenu(null);
       return;
     }
 
@@ -778,6 +826,7 @@ export function Desktop({ user }: { user: User }) {
     setLaunchpad(false);
     setLaunchpadSearch("");
     setContextMenu(null);
+    setActiveOsMenu(null);
 
     setWins((current) => {
       const existing = current.find(
@@ -928,6 +977,153 @@ export function Desktop({ user }: { user: User }) {
     (win) => win.max && !win.min && !win.closing,
   );
 
+  function runOsMenuAction(action: string) {
+    setActiveOsMenu(null);
+
+    if (action.startsWith("window:")) {
+      const id = action.slice("window:".length);
+
+      setWins((current) =>
+        current.map((win) =>
+          win.id === id ? { ...win, min: false, z: ++zTop } : win,
+        ),
+      );
+
+      setLaunchpad(false);
+      return;
+    }
+
+    switch (action) {
+      case "about":
+        window.alert(
+          "Sonoma Hub\nA customizable desktop for your web apps.",
+        );
+        break;
+
+      case "settings":
+        open("settings");
+        break;
+
+      case "new-browser":
+        open("browser");
+        break;
+
+      case "start":
+        setLaunchpad(true);
+        setLaunchpadSearch("");
+        break;
+
+      case "sign-out":
+        void supabase.auth.signOut();
+        break;
+
+      case "close-active":
+        if (focused) closeWindow(focused.id);
+        break;
+
+      case "close-all":
+        setWins([]);
+        break;
+
+      case "minimize-all":
+        setWins((current) =>
+          current.map((win) => ({ ...win, min: true, max: false })),
+        );
+        break;
+
+      case "restore-all":
+        setWins((current) =>
+          current.map((win) => ({ ...win, min: false, z: ++zTop })),
+        );
+        break;
+
+      case "fullscreen":
+        if (focused) toggleFullscreen(focused.id);
+        break;
+
+      case "copy-address":
+        if (navigator.clipboard?.writeText) {
+          void navigator.clipboard
+            .writeText(window.location.href)
+            .catch(() => {
+              window.prompt(
+                "Copy the Sonoma Hub address:",
+                window.location.href,
+              );
+            });
+        } else {
+          window.prompt(
+            "Copy the Sonoma Hub address:",
+            window.location.href,
+          );
+        }
+        break;
+
+      case "reset-appearance":
+        setPreferences(DEFAULT_DESKTOP_PREFERENCES);
+        break;
+    }
+  }
+
+  const osMenus: {
+    key: string;
+    label: string;
+    items: { label: string; action: string }[];
+  }[] = [
+    {
+      key: "finder",
+      label: focused ? byKey.get(focused.key)?.name ?? "Finder" : "Finder",
+      items: [
+        { label: "About Sonoma Hub", action: "about" },
+        { label: "Settings", action: "settings" },
+        { label: "Sign Out", action: "sign-out" },
+      ],
+    },
+    {
+      key: "file",
+      label: "File",
+      items: [
+        { label: "New Browser Window", action: "new-browser" },
+        { label: "Close Active Window", action: "close-active" },
+        { label: "Close All Windows", action: "close-all" },
+      ],
+    },
+    {
+      key: "edit",
+      label: "Edit",
+      items: [
+        { label: "Find Apps", action: "start" },
+        { label: "Copy Sonoma Hub Address", action: "copy-address" },
+      ],
+    },
+    {
+      key: "view",
+      label: "View",
+      items: [
+        { label: "Show Start Menu", action: "start" },
+        { label: "Toggle Fullscreen", action: "fullscreen" },
+        { label: "Reset Appearance", action: "reset-appearance" },
+      ],
+    },
+    {
+      key: "window",
+      label: "Window",
+      items: [
+        ...wins
+          .filter((win) => !win.closing)
+          .map((win) => ({
+            label: `${byKey.get(win.key)?.name ?? "App"}${
+              win.min ? " (Minimized)" : ""
+            }`,
+            action: `window:${win.id}`,
+          })),
+        { label: "Minimize All", action: "minimize-all" },
+        { label: "Restore All", action: "restore-all" },
+        { label: "Close All", action: "close-all" },
+      ],
+    },
+  ];
+
   const query = launchpadSearch.trim().toLowerCase();
   const matches = (app: Launchable) =>
     app.name.toLowerCase().includes(query);
@@ -1000,8 +1196,8 @@ export function Desktop({ user }: { user: User }) {
             src={preferences.customWallpaper}
             alt=""
             className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
             }}
           />
         )}
@@ -1019,17 +1215,21 @@ export function Desktop({ user }: { user: User }) {
             filter: blur(0);
           }
         }
+
         @keyframes start-backdrop-in {
           from { opacity: 0; }
           to { opacity: 1; }
         }
+
         .sonoma-start-menu {
           animation: start-menu-in 220ms cubic-bezier(.2,.8,.2,1) both;
           transform-origin: bottom center;
         }
+
         .sonoma-start-backdrop {
           animation: start-backdrop-in 160ms ease-out both;
         }
+
         @media (prefers-reduced-motion: reduce) {
           .sonoma-start-menu,
           .sonoma-start-backdrop {
@@ -1041,32 +1241,70 @@ export function Desktop({ user }: { user: User }) {
       {!isFullscreen && (
         <>
           <div
-            className="fixed inset-x-0 top-0 z-9998 flex h-7 items-center gap-5 px-4 text-[13px]"
-            style={glassStyle(preferences.glassBlur, 0.37)}
+            className="fixed inset-x-0 top-0 z-9998"
+            data-os-menu-root
           >
-            <span className="font-semibold">
-              {focused ? byKey.get(focused.key)?.name : "Finder"}
-            </span>
+            <div
+              className="flex h-7 items-center gap-1 px-3 text-[13px] sm:gap-3 sm:px-4"
+              style={glassStyle(preferences.glassBlur, 0.55)}
+            >
+              {osMenus.map((menu) => (
+                <div key={menu.key} className="relative">
+                  <button
+                    type="button"
+                    aria-haspopup="menu"
+                    aria-expanded={activeOsMenu === menu.key}
+                    onClick={() =>
+                      setActiveOsMenu((current) =>
+                        current === menu.key ? null : menu.key,
+                      )
+                    }
+                    className={`rounded-md px-2 py-1 transition hover:bg-white/10 ${
+                      menu.key === "finder" ? "font-semibold" : "opacity-85"
+                    }`}
+                  >
+                    {menu.label}
+                  </button>
 
-            <span className="opacity-80">File</span>
-            <span className="opacity-80">Edit</span>
-            <span className="opacity-80">View</span>
-            <span className="opacity-80">Window</span>
+                  {activeOsMenu === menu.key && (
+                    <div
+                      role="menu"
+                      className="absolute left-0 top-full mt-1 min-w-52 overflow-hidden rounded-xl p-1.5 shadow-xl"
+                      style={glassStyle(preferences.glassBlur + 8, 0.94)}
+                    >
+                      {menu.items.map((item, index) => (
+                        <button
+                          key={`${item.action}-${index}`}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => runOsMenuAction(item.action)}
+                          className="block w-full rounded-lg px-3 py-2 text-left text-xs transition hover:bg-white/10"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
 
-            <span className="ml-auto truncate opacity-90">{name}</span>
+              <span className="ml-auto max-w-[24vw] truncate text-white/80">
+                {name}
+              </span>
 
-            <span className="shrink-0">
-              {now.toLocaleDateString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              })}
-              &nbsp;
-              {now.toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
-            </span>
+              <span className="shrink-0 text-white/85">
+                {now.toLocaleDateString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                })}
+                {" "}
+                {now.toLocaleTimeString([], {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}
+              </span>
+            </div>
           </div>
 
           <div className="absolute left-6 top-12 space-y-3 animate-fade-up">
@@ -1125,15 +1363,13 @@ export function Desktop({ user }: { user: User }) {
           <div
             role="dialog"
             aria-label="Start menu"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
             className="sonoma-start-menu absolute bottom-17 left-1/2 flex max-h-[min(690px,calc(100dvh-92px))] w-[min(640px,calc(100vw-24px))] flex-col overflow-hidden rounded-3xl p-5 sm:p-7"
             style={glassStyle(preferences.glassBlur + 8, 0.78)}
           >
             <div className="mb-5 flex items-center gap-3">
               <div className="flex-1">
-                <h2 className="text-lg font-semibold tracking-tight">
-                  Start
-                </h2>
+                <h2 className="text-lg font-semibold tracking-tight">Start</h2>
                 <p className="mt-0.5 text-xs text-white/55">
                   Your apps and shortcuts
                 </p>
@@ -1159,7 +1395,7 @@ export function Desktop({ user }: { user: User }) {
               <Search size={17} className="text-white/65" />
               <input
                 value={launchpadSearch}
-                onChange={(e) => setLaunchpadSearch(e.target.value)}
+                onChange={(event) => setLaunchpadSearch(event.target.value)}
                 placeholder="Search apps"
                 aria-label="Search apps"
                 className="w-full min-w-0 bg-transparent text-sm text-white outline-none placeholder:text-white/55"
