@@ -1,14 +1,18 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import wallpaper from "@/assets/wallpaper.jpg";
 import { isAdmin, type HubApp } from "@/lib/hub";
 import {
   AdminApp,
+  AppIcon,
   BrowserApp,
   ChatApp,
   LinkPicker,
   SettingsApp,
+  DEFAULT_DESKTOP_PREFERENCES,
+  type DesktopPreferences,
 } from "./apps";
 
 type Launchable = {
@@ -32,7 +36,30 @@ type Win = {
   closing: boolean;
 };
 
+const PREFS_KEY = "sonoma-hub-desktop-preferences-v2";
+
+const wallpaperStyles: Record<string, string> = {
+  aurora:
+    "radial-gradient(ellipse at 20% 5%, #3bb9a4 0%, transparent 42%), radial-gradient(ellipse at 80% 35%, #7250bf 0%, transparent 46%), linear-gradient(145deg, #10152d, #153b55 55%, #111327)",
+  ocean:
+    "radial-gradient(ellipse at 80% 15%, #35b5cf 0%, transparent 40%), radial-gradient(ellipse at 20% 80%, #355fc5 0%, transparent 45%), linear-gradient(145deg, #07182f, #0c445d 55%, #10182f)",
+  midnight:
+    "radial-gradient(ellipse at 25% 10%, #54428f 0%, transparent 42%), radial-gradient(ellipse at 90% 90%, #174a61 0%, transparent 46%), linear-gradient(145deg, #090b19, #161329 55%, #080d1b)",
+  rose:
+    "radial-gradient(ellipse at 20% 15%, #fa9bc9 0%, transparent 40%), radial-gradient(ellipse at 85% 70%, #9a6be5 0%, transparent 43%), linear-gradient(145deg, #381d52, #bc668d 55%, #20244c)",
+};
+
 let zTop = 10;
+
+function glassStyle(blur: number, opacity = 0.42): CSSProperties {
+  return {
+    background: `rgba(22, 25, 43, ${opacity})`,
+    backdropFilter: `blur(${blur}px) saturate(175%)`,
+    WebkitBackdropFilter: `blur(${blur}px) saturate(175%)`,
+    border: "1px solid rgba(255,255,255,0.17)",
+    boxShadow: "0 12px 36px rgba(0,0,0,0.18)",
+  };
+}
 
 function Window({
   win,
@@ -42,6 +69,7 @@ function Window({
   onMin,
   onMax,
   onMove,
+  blur,
 }: {
   win: Win;
   app: Launchable;
@@ -50,16 +78,18 @@ function Window({
   onMin: () => void;
   onMax: () => void;
   onMove: (x: number, y: number) => void;
+  blur: number;
 }) {
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
-  const style = win.max
+  const style: CSSProperties = win.max
     ? {
         left: 0,
         top: 0,
         width: "100vw",
         height: "100dvh",
         zIndex: win.z,
+        ...glassStyle(blur, 0.34),
       }
     : {
         left: win.x,
@@ -67,6 +97,7 @@ function Window({
         width: win.w,
         height: win.h,
         zIndex: win.z,
+        ...glassStyle(blur, 0.43),
       };
 
   return (
@@ -75,7 +106,7 @@ function Window({
       style={style}
       className={`absolute flex flex-col overflow-hidden ${
         win.max ? "" : "rounded-xl"
-      } glass-strong shadow-window ${
+      } shadow-window transition-[width,height,left,top] duration-300 ${
         win.closing || win.min
           ? "animate-genie-out pointer-events-none"
           : "animate-genie-in"
@@ -84,24 +115,24 @@ function Window({
       <div
         className="flex h-9 shrink-0 cursor-default select-none items-center px-3"
         onDoubleClick={onMax}
-        onPointerDown={(event) => {
-          if ((event.target as HTMLElement).closest("button")) return;
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest("button")) return;
           if (win.max) return;
 
           drag.current = {
-            dx: event.clientX - win.x,
-            dy: event.clientY - win.y,
+            dx: e.clientX - win.x,
+            dy: e.clientY - win.y,
           };
 
-          event.currentTarget.setPointerCapture(event.pointerId);
+          e.currentTarget.setPointerCapture(e.pointerId);
         }}
-        onPointerMove={(event) => {
-          if (!drag.current || win.max) return;
-
-          onMove(
-            event.clientX - drag.current.dx,
-            Math.max(28, event.clientY - drag.current.dy),
-          );
+        onPointerMove={(e) => {
+          if (drag.current && !win.max) {
+            onMove(
+              e.clientX - drag.current.dx,
+              Math.max(28, e.clientY - drag.current.dy),
+            );
+          }
         }}
         onPointerUp={() => {
           drag.current = null;
@@ -112,26 +143,26 @@ function Window({
       >
         <div className="group flex shrink-0 gap-2">
           {[
-            ["bg-traffic-red", onClose, "×", "Close window"],
-            ["bg-traffic-yellow", onMin, "–", "Minimize window"],
+            ["bg-traffic-red", onClose, "×", "Close"],
+            ["bg-traffic-yellow", onMin, "−", "Minimize"],
             ["bg-traffic-green", onMax, "+", "Toggle fullscreen"],
-          ].map(([color, action, symbol, label], index) => (
+          ].map(([color, action, symbol, label], i) => (
             <button
-              key={index}
+              key={i}
               type="button"
               aria-label={label as string}
               title={label as string}
               onClick={action as () => void}
               className={`flex h-3 w-3 items-center justify-center rounded-full text-[9px] leading-none text-background ${color}`}
             >
-              <span className="opacity-0 group-hover:opacity-70">
+              <span className="opacity-0 group-hover:opacity-80">
                 {symbol as string}
               </span>
             </button>
           ))}
         </div>
 
-        <div className="min-w-0 flex-1 truncate px-2 text-center text-xs font-medium text-muted-foreground">
+        <div className="min-w-0 flex-1 truncate px-2 text-center text-xs font-medium text-foreground/80">
           {app.name}
         </div>
 
@@ -149,72 +180,128 @@ function Dock({
   items,
   running,
   onOpen,
+  preferences,
 }: {
   items: Launchable[];
   running: Set<string>;
   onOpen: (key: string) => void;
+  preferences: DesktopPreferences;
 }) {
-  const [mouseX, setMouseX] = useState<number | null>(null);
+  const [mouseCoordinate, setMouseCoordinate] = useState<number | null>(null);
   const [bounce, setBounce] = useState<string | null>(null);
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
+  const vertical = preferences.dockPosition !== "bottom";
+  const size = preferences.dockSize;
+  const blur = preferences.glassBlur;
+
+  const outerStyle: CSSProperties =
+    preferences.dockPosition === "bottom"
+      ? {
+          bottom: 10,
+          left: "50%",
+          transform: "translateX(-50%)",
+          width: `min(${preferences.dockWidth}vw, calc(100vw - 24px))`,
+          minWidth: "min(440px, calc(100vw - 24px))",
+        }
+      : {
+          top: "50%",
+          transform: "translateY(-50%)",
+          height: `min(${preferences.dockWidth}vh, calc(100dvh - 24px))`,
+          minHeight: "min(380px, calc(100dvh - 24px))",
+          width: size + 24,
+          ...(preferences.dockPosition === "left"
+            ? { left: 10 }
+            : { right: 10 }),
+        };
+
   return (
-    <div className="fixed bottom-2 left-1/2 z-9999 -translate-x-1/2">
+    <div className="fixed z-9999" style={outerStyle}>
       <div
-        onMouseMove={(event) => setMouseX(event.clientX)}
-        onMouseLeave={() => setMouseX(null)}
-        className="flex max-w-[calc(100vw-16px)] items-end gap-1.5 overflow-visible rounded-2xl border border-border glass px-2 pb-1.5 pt-1.5"
+        onMouseMove={(e) =>
+          setMouseCoordinate(vertical ? e.clientY : e.clientX)
+        }
+        onMouseLeave={() => setMouseCoordinate(null)}
+        style={{
+          ...glassStyle(blur + 6, 0.44),
+          width: "100%",
+          height: "100%",
+          padding: 7,
+          borderRadius: 23,
+          display: "flex",
+          flexDirection: vertical ? "column" : "row",
+          alignItems: "center",
+          justifyContent: vertical ? "center" : "space-evenly",
+          gap: 4,
+          overflow: "visible",
+        }}
       >
-        {items.map((item, index) => {
-          const element = refs.current[index];
+        {items.map((it, i) => {
+          const el = refs.current[i];
           let scale = 1;
 
-          if (mouseX !== null && element) {
-            const rect = element.getBoundingClientRect();
-            const center = rect.left + rect.width / 2;
-            const distance = Math.abs(mouseX - center);
+          if (mouseCoordinate !== null && el) {
+            const rect = el.getBoundingClientRect();
+            const center = vertical
+              ? rect.top + rect.height / 2
+              : rect.left + rect.width / 2;
 
-            scale = 1 + Math.max(0, 1 - distance / 140) * 0.45;
+            const distance = Math.abs(mouseCoordinate - center);
+            scale = 1 + Math.max(0, 1 - distance / 150) * 0.28;
           }
 
           return (
             <button
-              key={item.key}
-              ref={(element) => {
-                refs.current[index] = element;
+              key={it.key}
+              ref={(r) => {
+                refs.current[i] = r;
               }}
               type="button"
-              aria-label={`Open ${item.name}`}
-              title={item.name}
+              aria-label={`Open ${it.name}`}
+              title={it.name}
               onClick={() => {
-                setBounce(item.key);
-                window.setTimeout(() => setBounce(null), 900);
-                onOpen(item.key);
+                setBounce(it.key);
+                window.setTimeout(() => setBounce(null), 700);
+                onOpen(it.key);
               }}
-              className="group relative flex w-13 shrink-0 flex-col items-center border-0 bg-transparent p-0"
+              className={`group relative flex shrink-0 items-center justify-center border-0 bg-transparent p-1 ${
+                vertical ? "w-full flex-col" : "h-full flex-1 flex-col"
+              }`}
+              style={{
+                minWidth: vertical ? undefined : size + 14,
+                flex: vertical ? "0 0 auto" : "1 1 0%",
+              }}
             >
-              <span className="pointer-events-none absolute -top-9 left-1/2 z-20 max-w-35 -translate-x-1/2 truncate whitespace-nowrap rounded-md glass-strong px-2 py-1 text-xs opacity-0 shadow-md transition-opacity group-hover:opacity-100">
-                {item.name}
+              <span
+                className="pointer-events-none absolute -top-9 left-1/2 z-20 -translate-x-1/2 truncate whitespace-nowrap rounded-lg px-3 py-1.5 text-xs opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
+                style={glassStyle(blur, 0.72)}
+              >
+                {it.name}
               </span>
 
               <span
-                className={`pointer-events-none flex h-13 w-13 shrink-0 items-center justify-center rounded-[22%] shadow-lg ${
-                  bounce === item.key ? "animate-dock-bounce" : ""
+                className={`flex shrink-0 items-center justify-center rounded-[22%] shadow-lg ${
+                  bounce === it.key ? "animate-dock-bounce" : ""
                 }`}
                 style={{
-                  background: `linear-gradient(160deg, ${item.color}, color-mix(in oklab, ${item.color} 55%, black))`,
-                  fontSize: 28,
+                  height: size,
+                  width: size,
+                  background: `linear-gradient(155deg, ${it.color}, color-mix(in oklab, ${it.color} 54%, black))`,
                   transform: `scale(${scale})`,
-                  transformOrigin: "center bottom",
+                  transformOrigin: "center center",
                   transition: "transform 120ms ease-out",
                 }}
               >
-                {item.icon}
+                <AppIcon
+                  icon={it.icon}
+                  className="leading-none"
+                  imageClassName="h-[74%] w-[74%] object-contain"
+                />
               </span>
 
               <span
-                className={`pointer-events-none mt-1 h-1 w-1 rounded-full bg-foreground ${
-                  running.has(item.key) ? "opacity-80" : "opacity-0"
+                className={`mt-1 h-1 w-1 rounded-full bg-foreground ${
+                  running.has(it.key) ? "opacity-90" : "opacity-0"
                 }`}
               />
             </button>
@@ -229,12 +316,47 @@ export function Desktop({ user }: { user: User }) {
   const [hubApps, setHubApps] = useState<HubApp[]>([]);
   const [wins, setWins] = useState<Win[]>([]);
   const [launchpad, setLaunchpad] = useState(false);
+  const [launchpadSearch, setLaunchpadSearch] = useState("");
   const [now, setNow] = useState(new Date());
+  const [preferences, setPreferences] = useState<DesktopPreferences>(
+    DEFAULT_DESKTOP_PREFERENCES,
+  );
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
   const admin = isAdmin(user);
-  const name = String(
-    user.user_metadata?.["name"] ?? user.email ?? "User",
-  );
+  const name = String(user.user_metadata?.["name"] ?? user.email ?? "User");
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PREFS_KEY);
+
+      if (saved) {
+        const parsed = JSON.parse(saved) as Partial<DesktopPreferences>;
+
+        setPreferences({
+          ...DEFAULT_DESKTOP_PREFERENCES,
+          ...parsed,
+          dockWidth: Math.min(90, Math.max(35, Number(parsed.dockWidth) || 50)),
+          dockSize: Math.min(68, Math.max(40, Number(parsed.dockSize) || 52)),
+          glassBlur: Math.min(40, Math.max(12, Number(parsed.glassBlur) || 28)),
+        });
+      }
+    } catch {
+      // Keep defaults if saved preferences cannot be read.
+    } finally {
+      setPreferencesLoaded(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesLoaded) return;
+
+    try {
+      localStorage.setItem(PREFS_KEY, JSON.stringify(preferences));
+    } catch {
+      // The desktop continues to work even if storage is unavailable.
+    }
+  }, [preferences, preferencesLoaded]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 10000);
@@ -274,6 +396,10 @@ export function Desktop({ user }: { user: User }) {
     };
   }, []);
 
+  const changePreferences = (patch: Partial<DesktopPreferences>) => {
+    setPreferences((current) => ({ ...current, ...patch }));
+  };
+
   const builtins: Launchable[] = [
     {
       key: "launchpad",
@@ -307,6 +433,8 @@ export function Desktop({ user }: { user: User }) {
           email={user.email ?? ""}
           admin={admin}
           onSignOut={() => void supabase.auth.signOut()}
+          preferences={preferences}
+          onPreferencesChange={changePreferences}
         />
       ),
     },
@@ -332,19 +460,16 @@ export function Desktop({ user }: { user: User }) {
   }));
 
   const allApps = [...builtins, ...dynamic];
-  const appsByKey = new Map(allApps.map((app) => [app.key, app]));
-
-  const isFullscreen = wins.some(
-    (win) => win.max && !win.min && !win.closing,
-  );
+  const byKey = new Map(allApps.map((app) => [app.key, app]));
 
   function open(key: string) {
     if (key === "launchpad") {
       setLaunchpad((previous) => !previous);
+      setLaunchpadSearch("");
       return;
     }
 
-    const app = appsByKey.get(key);
+    const app = byKey.get(key);
     if (!app) return;
 
     setLaunchpad(false);
@@ -357,24 +482,14 @@ export function Desktop({ user }: { user: User }) {
       if (existing) {
         return current.map((win) =>
           win.id === existing.id
-            ? {
-                ...win,
-                min: false,
-                z: ++zTop,
-              }
+            ? { ...win, min: false, z: ++zTop }
             : win,
         );
       }
 
       const index = current.length;
-      const width = Math.max(
-        320,
-        Math.min(1000, window.innerWidth - 48),
-      );
-      const height = Math.max(
-        280,
-        Math.min(650, window.innerHeight - 80),
-      );
+      const width = Math.max(320, Math.min(1000, window.innerWidth - 48));
+      const height = Math.max(280, Math.min(650, window.innerHeight - 80));
 
       return [
         ...current,
@@ -424,22 +539,85 @@ export function Desktop({ user }: { user: User }) {
     .filter((win) => !win.min && !win.closing)
     .sort((a, b) => b.z - a.z)[0];
 
-  // Keep dynamic apps in Launchpad instead of overcrowding the dock.
-  const dockItems = builtins;
+  const isFullscreen = wins.some(
+    (win) => win.max && !win.min && !win.closing,
+  );
+
+  const matchesSearch = (app: Launchable) =>
+    app.name.toLowerCase().includes(launchpadSearch.trim().toLowerCase());
+
+  const appKind = (app: Launchable) =>
+    hubApps.find((source) => source.id === app.key)?.kind;
+
+  const launchpadSections = [
+    {
+      key: "proxy",
+      title: "Proxies",
+      items: dynamic.filter(
+        (app) => appKind(app) === "proxy" && matchesSearch(app),
+      ),
+    },
+    {
+      key: "game",
+      title: "Games",
+      items: dynamic.filter(
+        (app) => appKind(app) === "game" && matchesSearch(app),
+      ),
+    },
+    {
+      key: "app",
+      title: "Apps",
+      items: [
+        ...builtins.filter(
+          (app) => app.key !== "launchpad" && matchesSearch(app),
+        ),
+        ...dynamic.filter(
+          (app) => appKind(app) === "app" && matchesSearch(app),
+        ),
+      ],
+    },
+  ];
+
+  const blurredPanel = glassStyle(preferences.glassBlur, 0.25);
 
   return (
-    <div className="fixed inset-0 overflow-hidden text-glass-foreground">
-      <img
-        src={wallpaper}
-        alt=""
-        className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-      />
+    <div
+      className="fixed inset-0 overflow-hidden text-glass-foreground"
+      style={{
+        background:
+          preferences.wallpaper === "sonoma" ||
+          (preferences.wallpaper === "custom" && preferences.customWallpaper)
+            ? "#101323"
+            : wallpaperStyles[preferences.wallpaper] ?? wallpaperStyles.midnight,
+      }}
+    >
+      {preferences.wallpaper === "sonoma" && (
+        <img
+          src={wallpaper}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+        />
+      )}
+
+      {preferences.wallpaper === "custom" && preferences.customWallpaper && (
+        <img
+          src={preferences.customWallpaper}
+          alt=""
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
+        />
+      )}
 
       {!isFullscreen && (
         <>
-          <div className="fixed inset-x-0 top-0 z-9998 flex h-7 items-center gap-5 glass px-4 text-[13px]">
+          <div
+            className="fixed inset-x-0 top-0 z-9998 flex h-7 items-center gap-5 px-4 text-[13px]"
+            style={glassStyle(preferences.glassBlur, 0.37)}
+          >
             <span className="font-semibold">
-              {focused ? appsByKey.get(focused.key)?.name : "Finder"}
+              {focused ? byKey.get(focused.key)?.name : "Finder"}
             </span>
 
             <span className="opacity-80">File</span>
@@ -464,16 +642,20 @@ export function Desktop({ user }: { user: User }) {
           </div>
 
           <div className="absolute left-6 top-12 space-y-3 animate-fade-up">
-            <div className="w-40 rounded-2xl border border-border glass p-4">
+            <div
+              className="w-40 rounded-2xl p-4"
+              style={blurredPanel}
+            >
               <div className="text-xs uppercase opacity-70">
-                {now.toLocaleDateString(undefined, {
-                  weekday: "long",
-                })}
+                {now.toLocaleDateString(undefined, { weekday: "long" })}
               </div>
               <div className="text-5xl font-light">{now.getDate()}</div>
             </div>
 
-            <div className="w-40 rounded-2xl border border-border glass p-4 text-sm">
+            <div
+              className="w-40 rounded-2xl p-4 text-sm"
+              style={blurredPanel}
+            >
               <div className="opacity-70">Apps live</div>
               <div className="text-3xl font-semibold">{hubApps.length}</div>
             </div>
@@ -482,7 +664,7 @@ export function Desktop({ user }: { user: User }) {
       )}
 
       {wins.map((win) => {
-        const app = appsByKey.get(win.key);
+        const app = byKey.get(win.key);
         if (!app) return null;
 
         return (
@@ -490,11 +672,10 @@ export function Desktop({ user }: { user: User }) {
             key={win.id}
             win={win}
             app={app}
+            blur={preferences.glassBlur}
             onFocus={() => updateWindow(win.id, { z: ++zTop })}
             onClose={() => closeWindow(win.id)}
-            onMin={() =>
-              updateWindow(win.id, { min: true, max: false })
-            }
+            onMin={() => updateWindow(win.id, { min: true, max: false })}
             onMax={() => toggleFullscreen(win.id)}
             onMove={(x, y) => updateWindow(win.id, { x, y })}
           />
@@ -504,74 +685,100 @@ export function Desktop({ user }: { user: User }) {
       {launchpad && !isFullscreen && (
         <div
           onClick={() => setLaunchpad(false)}
-          className="fixed inset-0 z-9990 overflow-auto glass animate-fade-up px-[10vw] pb-32 pt-20"
+          className="fixed inset-0 z-9990 overflow-auto px-5 pb-32 pt-12 md:px-[10vw] md:pt-16"
+          style={{
+            background: "rgba(10,12,23,0.28)",
+            backdropFilter: `blur(${preferences.glassBlur + 10}px) saturate(165%)`,
+            WebkitBackdropFilter: `blur(${preferences.glassBlur + 10}px) saturate(165%)`,
+          }}
         >
-          {(["proxy", "game", "app"] as const).map((kind) => {
-            const list =
-              kind === "app"
-                ? [
-                    ...builtins.filter(
-                      (app) => app.key !== "launchpad",
-                    ),
-                    ...dynamic.filter(
-                      (app) =>
-                        hubApps.find((source) => source.id === app.key)
-                          ?.kind === "app",
-                    ),
-                  ]
-                : dynamic.filter(
-                    (app) =>
-                      hubApps.find((source) => source.id === app.key)
-                        ?.kind === kind,
-                  );
+          <div
+            className="mx-auto max-w-6xl rounded-3xl p-6 md:p-8"
+            style={glassStyle(preferences.glassBlur + 4, 0.42)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-8 flex flex-wrap items-center gap-4">
+              <div className="flex-1">
+                <h2 className="text-2xl font-semibold tracking-tight">
+                  Launchpad
+                </h2>
+                <p className="mt-1 text-sm text-white/65">
+                  Your apps, games and proxies
+                </p>
+              </div>
 
-            if (!list.length) return null;
+              <label className="min-w-[220px] flex-1 md:max-w-sm">
+                <span className="sr-only">Search apps</span>
+                <input
+                  value={launchpadSearch}
+                  onChange={(e) => setLaunchpadSearch(e.target.value)}
+                  placeholder="Search apps…"
+                  className="w-full rounded-xl border border-white/15 bg-black/15 px-4 py-2.5 text-sm outline-none placeholder:text-white/50 focus:border-white/35"
+                />
+              </label>
 
-            return (
-              <section key={kind} className="mb-10">
-                <h3 className="mb-4 text-sm font-semibold uppercase tracking-widest opacity-70">
-                  {kind === "proxy"
-                    ? "Proxies"
-                    : kind === "game"
-                      ? "Games"
-                      : "Apps"}
-                </h3>
+              <button
+                type="button"
+                onClick={() => setLaunchpad(false)}
+                aria-label="Close Launchpad"
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10"
+              >
+                ✕
+              </button>
+            </div>
 
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-6">
-                  {list.map((app) => (
-                    <button
-                      key={app.key}
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        open(app.key);
-                      }}
-                      className="flex flex-col items-center gap-2 transition hover:scale-110"
-                    >
-                      <span
-                        className="flex h-20 w-20 items-center justify-center rounded-[22%] text-4xl shadow-xl"
-                        style={{
-                          background: `linear-gradient(160deg, ${app.color}, color-mix(in oklab, ${app.color} 55%, black))`,
-                        }}
+            {launchpadSections.map((section) => {
+              if (!section.items.length) return null;
+
+              return (
+                <section key={section.key} className="mb-9 last:mb-0">
+                  <h3 className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-white/65">
+                    {section.title}
+                  </h3>
+
+                  <div className="grid grid-cols-3 gap-x-3 gap-y-6 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7">
+                    {section.items.map((app) => (
+                      <button
+                        key={app.key}
+                        type="button"
+                        onClick={() => open(app.key)}
+                        className="group flex min-w-0 flex-col items-center gap-2 rounded-2xl p-2 transition hover:bg-white/10"
                       >
-                        {app.icon}
-                      </span>
+                        <span
+                          className="flex h-[68px] w-[68px] items-center justify-center rounded-[22%] shadow-xl transition duration-200 group-hover:-translate-y-1 group-hover:scale-105"
+                          style={{
+                            background: `linear-gradient(155deg, ${app.color}, color-mix(in oklab, ${app.color} 54%, black))`,
+                          }}
+                        >
+                          <AppIcon
+                            icon={app.icon}
+                            className="text-4xl leading-none"
+                            imageClassName="h-[76%] w-[76%] object-contain"
+                          />
+                        </span>
 
-                      <span className="max-w-28 truncate text-xs">
-                        {app.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            );
-          })}
+                        <span className="w-full truncate text-center text-xs text-white/90">
+                          {app.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+
+            {launchpadSections.every((section) => section.items.length === 0) && (
+              <p className="py-12 text-center text-sm text-white/60">
+                No apps found. Try a different search.
+              </p>
+            )}
+          </div>
         </div>
       )}
 
       {!isFullscreen && (
         <Dock
-          items={dockItems}
+          items={builtins}
           running={
             new Set(
               wins
@@ -580,6 +787,7 @@ export function Desktop({ user }: { user: User }) {
             )
           }
           onOpen={open}
+          preferences={preferences}
         />
       )}
     </div>
